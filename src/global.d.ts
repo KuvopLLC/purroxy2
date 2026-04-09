@@ -70,6 +70,11 @@ interface PurroxyAPI {
     onTitleChanged: (cb: (title: string) => void) => () => void
     onLoading: (cb: (loading: boolean) => void) => () => void
   }
+  ai: {
+    getPageContent: () => Promise<string>
+    chat: (messages: Array<{ role: string; content: string }>, pageContext?: string) =>
+      Promise<{ content?: string; error?: string }>
+  }
   recorder: {
     start: () => Promise<boolean>
     stop: () => Promise<boolean>

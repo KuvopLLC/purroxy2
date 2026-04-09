@@ -50,6 +50,11 @@ contextBridge.exposeInMainWorld('purroxy', {
       return () => ipcRenderer.removeListener('recorder:action', handler)
     }
   },
+  ai: {
+    getPageContent: () => ipcRenderer.invoke('ai:getPageContent'),
+    chat: (messages: Array<{ role: string; content: string }>, pageContext?: string) =>
+      ipcRenderer.invoke('ai:chat', messages, pageContext)
+  },
   sites: {
     getAll: () => ipcRenderer.invoke('sites:getAll'),
     create: (url: string, name: string, faviconUrl: string) =>
