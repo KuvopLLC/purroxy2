@@ -26,6 +26,7 @@
     "vite-plugin-electron-renderer": "^0.14.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "electron-store": "^8.2.0",
     "lucide-react": "^0.460.0",
     "playwright": "^1.59.1",

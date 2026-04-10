@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Eye, EyeOff, Check } from 'lucide-react'
+import { Eye, EyeOff, Check, CheckCircle, XCircle, Loader2, Link2, Unlink } from 'lucide-react'
 import { useSettings } from '../stores/settings'
 
 export default function Settings() {
@@ -9,13 +9,23 @@ export default function Settings() {
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  // Claude Desktop status
+  const [claudeStatus, setClaudeStatus] = useState<{ installed: boolean; connected: boolean; configPath?: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+
   useEffect(() => {
     if (!loaded) load()
+    checkClaudeStatus()
   }, [loaded, load])
 
   useEffect(() => {
     if (loaded) setKeyInput(aiApiKey)
   }, [loaded, aiApiKey])
+
+  const checkClaudeStatus = async () => {
+    const status = await window.purroxy.claude.getStatus()
+    setClaudeStatus(status)
+  }
 
   const handleSaveKey = async () => {
     await setAiApiKey(keyInput.trim())
@@ -23,15 +33,75 @@ export default function Settings() {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const maskedKey = keyInput
-    ? keyInput.slice(0, 7) + '...' + keyInput.slice(-4)
-    : ''
+  const handleConnect = async () => {
+    setConnecting(true)
+    const result = await window.purroxy.claude.connect()
+    if (result.success) {
+      await checkClaudeStatus()
+    }
+    setConnecting(false)
+  }
+
+  const handleDisconnect = async () => {
+    await window.purroxy.claude.disconnect()
+    await checkClaudeStatus()
+  }
 
   if (!loaded) return null
 
   return (
     <div className="p-8 max-w-xl">
       <h2 className="text-xl font-semibold mb-6">Settings</h2>
+
+      {/* Claude Desktop Integration */}
+      <section className="mb-8">
+        <label className="block text-sm font-medium mb-2">Claude Desktop</label>
+
+        {claudeStatus === null ? (
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <Loader2 size={14} className="animate-spin" /> Checking...
+          </div>
+        ) : !claudeStatus.installed ? (
+          <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">Claude Desktop is not installed.</p>
+            <a href="https://claude.ai/download" target="_blank" className="text-sm text-accent hover:text-accent-light font-medium">
+              Download Claude Desktop
+            </a>
+          </div>
+        ) : claudeStatus.connected ? (
+          <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
+                <span className="text-sm font-medium text-green-800 dark:text-green-300">Connected</span>
+              </div>
+              <button onClick={handleDisconnect} className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors">
+                <Unlink size={12} /> Disconnect
+              </button>
+            </div>
+            <p className="text-xs text-green-700 dark:text-green-400/80 mt-1">
+              Your capabilities are available in Claude Desktop. Restart Claude Desktop if you just connected.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+              Connect Purroxy so Claude Desktop can run your capabilities.
+            </p>
+            <button onClick={handleConnect} disabled={connecting}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors disabled:opacity-60">
+              {connecting ? (
+                <><Loader2 size={14} className="animate-spin" /> Connecting...</>
+              ) : (
+                <><Link2 size={14} /> Connect to Claude Desktop</>
+              )}
+            </button>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+              Purroxy must be running for Claude to use your capabilities.
+            </p>
+          </div>
+        )}
+      </section>
 
       {/* API Key */}
       <section className="mb-8">
@@ -61,7 +131,7 @@ export default function Settings() {
           </button>
         </div>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-          Your key is stored locally and never sent to Purroxy servers.
+          Used for the AI guide when building capabilities. Stored locally.
         </p>
       </section>
 

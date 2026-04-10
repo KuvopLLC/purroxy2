@@ -59,6 +59,74 @@ export function setupIPC() {
     return updateCapability(id, updates)
   })
 
+  // Claude Desktop integration
+  ipcMain.handle('claude:getStatus', () => {
+    const configPath = getClaudeConfigPath()
+    if (!configPath) return { installed: false, connected: false }
+
+    const fs = require('fs')
+    const path = require('path')
+
+    const installed = fs.existsSync(path.dirname(configPath))
+    if (!installed) return { installed: false, connected: false }
+
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+      const connected = !!config?.mcpServers?.purroxy
+      return { installed: true, connected, configPath }
+    } catch {
+      return { installed: true, connected: false, configPath }
+    }
+  })
+
+  ipcMain.handle('claude:connect', () => {
+    const configPath = getClaudeConfigPath()
+    if (!configPath) return { error: 'Could not find Claude Desktop config location' }
+
+    const fs = require('fs')
+    const path = require('path')
+
+    // Get absolute path to mcp-server.mjs
+    const appPath = require('electron').app.getAppPath()
+    const mcpServerPath = path.resolve(appPath, 'mcp-server.mjs')
+
+    // Read existing config or create new
+    let config: any = {}
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+    } catch {
+      // Config doesn't exist yet — create directory
+      fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    }
+
+    // Add/update purroxy server
+    if (!config.mcpServers) config.mcpServers = {}
+    config.mcpServers.purroxy = {
+      command: 'node',
+      args: [mcpServerPath]
+    }
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+    return { success: true, configPath, mcpServerPath }
+  })
+
+  ipcMain.handle('claude:disconnect', () => {
+    const configPath = getClaudeConfigPath()
+    if (!configPath) return { error: 'Config not found' }
+
+    const fs = require('fs')
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+      if (config?.mcpServers?.purroxy) {
+        delete config.mcpServers.purroxy
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+      }
+      return { success: true }
+    } catch {
+      return { error: 'Failed to update config' }
+    }
+  })
+
   // Window management
   let savedBounds: Electron.Rectangle | null = null
   ipcMain.handle('window:expandForRecording', () => {
@@ -111,4 +179,18 @@ export function setupIPC() {
       return { opened: false, downloadUrl: 'https://claude.ai/download' }
     }
   })
+}
+
+function getClaudeConfigPath(): string | null {
+  const path = require('path')
+  const os = require('os')
+  const home = os.homedir()
+
+  if (process.platform === 'darwin') {
+    return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+  } else if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json')
+  } else {
+    return path.join(home, '.config', 'Claude', 'claude_desktop_config.json')
+  }
 }

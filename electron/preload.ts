@@ -82,6 +82,11 @@ contextBridge.exposeInMainWorld('purroxy', {
       return () => ipcRenderer.removeListener('executor:status', handler)
     }
   },
+  claude: {
+    getStatus: () => ipcRenderer.invoke('claude:getStatus'),
+    connect: () => ipcRenderer.invoke('claude:connect'),
+    disconnect: () => ipcRenderer.invoke('claude:disconnect')
+  },
   window: {
     expandForRecording: () => ipcRenderer.invoke('window:expandForRecording'),
     restoreSize: () => ipcRenderer.invoke('window:restoreSize')

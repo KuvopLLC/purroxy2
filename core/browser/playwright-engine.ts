@@ -234,13 +234,13 @@ export class PlaywrightEngine {
       case 'type':
         if (action.selector && action.value && !action.sensitive) {
           try {
-            await this.page.waitForSelector(action.selector, { state: 'visible', timeout: 5000 })
+            await this.page.waitForSelector(action.selector, { state: 'visible', timeout: 2000 })
             await this.page.fill(action.selector, action.value)
           } catch {
             // Fallback: try by label/placeholder
             if (action.label) {
               this.addLog(`  Selector failed for type, trying by label...`)
-              await this.page.getByLabel(action.label, { exact: false }).first().fill(action.value, { timeout: 5000 })
+              await this.page.getByLabel(action.label, { exact: false }).first().fill(action.value, { timeout: 2000 })
               this.addLog(`  Found input by label "${action.label}"`)
             } else {
               throw new Error(`Could not find input: ${action.selector}`)
@@ -257,7 +257,7 @@ export class PlaywrightEngine {
             await this.waitAndClick(action.selector)
             await this.page.waitForTimeout(300)
             const option = this.page.getByText(action.value, { exact: false }).first()
-            await option.click({ timeout: 5000 }).catch(() => {})
+            await option.click({ timeout: 2000 }).catch(() => {})
           }
         }
         break
@@ -294,30 +294,30 @@ export class PlaywrightEngine {
       try {
         switch (loc.strategy) {
           case 'testid':
-            await this.page.getByTestId(loc.value).first().click({ timeout: 3000 })
+            await this.page.getByTestId(loc.value).first().click({ timeout: 2000 })
             this.addLog(`  Found by testid "${loc.value}"`)
             return
 
           case 'role':
             if (loc.name) {
-              await this.page.getByRole(loc.value as any, { name: loc.name, exact: false }).first().click({ timeout: 3000 })
+              await this.page.getByRole(loc.value as any, { name: loc.name, exact: false }).first().click({ timeout: 2000 })
               this.addLog(`  Found by role="${loc.value}" name="${loc.name}"`)
               return
             }
             break
 
           case 'text':
-            await this.page.getByText(loc.value, { exact: false }).first().click({ timeout: 3000 })
+            await this.page.getByText(loc.value, { exact: false }).first().click({ timeout: 2000 })
             this.addLog(`  Found by text "${loc.value}"`)
             return
 
           case 'aria':
-            await this.page.click(`[aria-label="${loc.value}"]`, { timeout: 3000 })
+            await this.page.click(`[aria-label="${loc.value}"]`, { timeout: 2000 })
             this.addLog(`  Found by aria-label "${loc.value}"`)
             return
 
           case 'placeholder':
-            await this.page.getByPlaceholder(loc.value, { exact: false }).first().click({ timeout: 3000 })
+            await this.page.getByPlaceholder(loc.value, { exact: false }).first().click({ timeout: 2000 })
             this.addLog(`  Found by placeholder "${loc.value}"`)
             return
 
@@ -325,12 +325,12 @@ export class PlaywrightEngine {
             // Find text, then click the nearest matching tag
             const container = this.page.getByText(loc.value, { exact: false }).first()
             const nearby = container.locator(`.. >> ${loc.tag || '*'}`).first()
-            await nearby.click({ timeout: 3000 })
+            await nearby.click({ timeout: 2000 })
             this.addLog(`  Found by nearby text "${loc.value}"`)
             return
 
           case 'css':
-            await this.page.waitForSelector(loc.value, { state: 'visible', timeout: 3000 })
+            await this.page.waitForSelector(loc.value, { state: 'visible', timeout: 2000 })
             await this.page.click(loc.value)
             this.addLog(`  Found by CSS "${loc.value.slice(0, 50)}"`)
             return
@@ -346,7 +346,7 @@ export class PlaywrightEngine {
 
       if (action.selector) {
         try {
-          await this.page.waitForSelector(action.selector, { state: 'visible', timeout: 5000 })
+          await this.page.waitForSelector(action.selector, { state: 'visible', timeout: 2000 })
           await this.page.click(action.selector)
           this.addLog(`  Found by CSS selector`)
           return
@@ -358,54 +358,19 @@ export class PlaywrightEngine {
       if (action.label && action.label.length > 1) {
         const label = action.label
 
-        // Try role + text
-        if (action.tagName === 'button' || action.tagName === 'a') {
-          try {
-            const role = action.tagName === 'a' ? 'link' : 'button'
-            await this.page.getByRole(role, { name: label, exact: false }).first().click({ timeout: 3000 })
-            this.addLog(`  Fallback: found by role="${role}" name="${label}"`)
-            return
-          } catch {
-            this.addLog(`  Role fallback failed for "${label}"`)
-          }
-        }
-
-        // Try exact text
+        // Quick fallback: just try text match (covers most cases)
         try {
-          await this.page.getByText(label, { exact: true }).first().click({ timeout: 3000 })
-          this.addLog(`  Fallback: found by exact text "${label}"`)
+          await this.page.getByText(label, { exact: true }).first().click({ timeout: 1500 })
+          this.addLog(`  Fallback: found by text "${label}"`)
           return
-        } catch {
-          this.addLog(`  Exact text fallback failed for "${label}"`)
-        }
+        } catch {}
 
         // Try partial text
         try {
-          await this.page.getByText(label, { exact: false }).first().click({ timeout: 3000 })
+          await this.page.getByText(label, { exact: false }).first().click({ timeout: 1500 })
           this.addLog(`  Fallback: found by partial text "${label}"`)
           return
-        } catch {
-          this.addLog(`  Partial text fallback failed for "${label}"`)
-        }
-
-        // Try aria-label
-        try {
-          await this.page.click(`[aria-label*="${label}" i]`, { timeout: 3000 })
-          this.addLog(`  Fallback: found by aria-label "${label}"`)
-          return
-        } catch {
-          this.addLog(`  Aria-label fallback failed for "${label}"`)
-        }
-
-        // Try clicking inside a container that has the text
-        try {
-          const container = this.page.locator(`:has-text("${label}")`).last()
-          await container.click({ timeout: 3000 })
-          this.addLog(`  Fallback: found by has-text container "${label}"`)
-          return
-        } catch {
-          this.addLog(`  Has-text fallback failed for "${label}"`)
-        }
+        } catch {}
       }
     }
 

@@ -1,0 +1,151 @@
+import { createServer, IncomingMessage, ServerResponse } from 'http'
+import { getAllCapabilities, getCapability } from './capabilities'
+import { getAllSites, getSite, getSession } from './sites'
+import { PlaywrightEngine } from '../core/browser/playwright-engine'
+import { writeFileSync } from 'fs'
+import { join } from 'path'
+import { app } from 'electron'
+
+let server: ReturnType<typeof createServer> | null = null
+let serverPort = 0
+
+export function startMCPApi(): number {
+  if (server) return serverPort
+
+  server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    // CORS for local requests only
+    res.setHeader('Content-Type', 'application/json')
+
+    let body = ''
+    req.on('data', (chunk) => { body += chunk })
+    req.on('end', async () => {
+      try {
+        const url = req.url || ''
+
+        if (url === '/tools' && req.method === 'GET') {
+          // List all capabilities as MCP tools
+          const caps = getAllCapabilities()
+          const sites = getAllSites()
+
+          const tools = caps.map(cap => {
+            const site = getSite(cap.siteProfileId)
+            const params: Record<string, any> = {}
+            for (const p of cap.parameters) {
+              params[p.name] = {
+                type: 'string',
+                description: p.description,
+                default: p.defaultValue
+              }
+            }
+
+            return {
+              name: `purroxy_${cap.id.replace(/-/g, '_').slice(0, 20)}`,
+              description: `[${site?.hostname || 'unknown'}] ${cap.name}: ${cap.description}`,
+              inputSchema: {
+                type: 'object',
+                properties: params,
+                required: cap.parameters.filter(p => p.required).map(p => p.name)
+              },
+              _capabilityId: cap.id
+            }
+          })
+
+          res.writeHead(200)
+          res.end(JSON.stringify({ tools }))
+
+        } else if (url === '/execute' && req.method === 'POST') {
+          // Execute a capability
+          const { capabilityId, params: paramValues = {} } = JSON.parse(body || '{}')
+
+          const cap = getCapability(capabilityId)
+          if (!cap) {
+            res.writeHead(404)
+            res.end(JSON.stringify({ error: 'Capability not found' }))
+            return
+          }
+
+          const site = getSite(cap.siteProfileId)
+          if (!site) {
+            res.writeHead(404)
+            res.end(JSON.stringify({ error: 'Site not found' }))
+            return
+          }
+
+          const session = getSession(cap.siteProfileId)
+          const engine = new PlaywrightEngine()
+
+          try {
+            await engine.launch({
+              headless: true,
+              cookies: session?.cookies || [],
+              localStorage: session?.localStorage || {},
+              viewport: (cap as any).viewport || undefined
+            })
+
+            // Auto-prepend navigate if needed
+            let actions = [...(cap.actions as any[])]
+            let params = [...(cap.parameters as any[])]
+            const firstAction = actions[0]
+            if (!firstAction || firstAction.type !== 'navigate' || !firstAction.url) {
+              const siteUrl = site.url || ('https://' + site.hostname)
+              actions.unshift({
+                type: 'navigate', timestamp: 0, url: siteUrl,
+                label: 'Navigate to site (auto-prepended)'
+              })
+              params = params.map((p: any) => ({ ...p, actionIndex: p.actionIndex + 1 }))
+            }
+
+            const result = await engine.execute(actions, params, paramValues, cap.extractionRules as any)
+
+            // Redact sensitive fields
+            if (result.data) {
+              for (const rule of cap.extractionRules) {
+                if (rule.sensitive && result.data[rule.name]) {
+                  result.data[rule.name] = '[REDACTED - sensitive]'
+                }
+              }
+            }
+
+            res.writeHead(200)
+            res.end(JSON.stringify({
+              success: result.success,
+              data: result.data,
+              error: result.error,
+              durationMs: result.durationMs
+            }))
+          } catch (err: any) {
+            res.writeHead(500)
+            res.end(JSON.stringify({ error: err.message }))
+          } finally {
+            await engine.close()
+          }
+
+        } else {
+          res.writeHead(404)
+          res.end(JSON.stringify({ error: 'Not found' }))
+        }
+      } catch (err: any) {
+        res.writeHead(500)
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })
+  })
+
+  // Listen on random port
+  server.listen(0, '127.0.0.1', () => {
+    const addr = server!.address()
+    serverPort = typeof addr === 'object' && addr ? addr.port : 0
+    console.log(`[MCP API] Listening on port ${serverPort}`)
+
+    // Write port to a known file so the MCP server script can find it
+    const portFile = join(app.getPath('userData'), 'mcp-port')
+    writeFileSync(portFile, String(serverPort))
+  })
+
+  return serverPort
+}
+
+export function stopMCPApi() {
+  server?.close()
+  server = null
+}
