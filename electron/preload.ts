@@ -82,6 +82,12 @@ contextBridge.exposeInMainWorld('purroxy', {
       return () => ipcRenderer.removeListener('executor:status', handler)
     }
   },
+  vault: {
+    list: () => ipcRenderer.invoke('vault:list'),
+    set: (key: string, value: string) => ipcRenderer.invoke('vault:set', key, value),
+    delete: (key: string) => ipcRenderer.invoke('vault:delete', key),
+    peek: (key: string) => ipcRenderer.invoke('vault:peek', key)
+  },
   claude: {
     getStatus: () => ipcRenderer.invoke('claude:getStatus'),
     connect: () => ipcRenderer.invoke('claude:connect'),

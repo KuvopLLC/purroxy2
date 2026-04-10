@@ -1,6 +1,7 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { getAllCapabilities, getCapability } from './capabilities'
 import { getAllSites, getSite, getSession } from './sites'
+import { getAllDecryptedValues } from './vault'
 import { PlaywrightEngine } from '../core/browser/playwright-engine'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
@@ -104,11 +105,27 @@ export function startMCPApi(): number {
 
             const result = await engine.execute(actions, params, paramValues, cap.extractionRules as any)
 
-            // Redact sensitive fields
+            // Redact sensitive extraction fields
             if (result.data) {
               for (const rule of cap.extractionRules) {
                 if (rule.sensitive && result.data[rule.name]) {
                   result.data[rule.name] = '[REDACTED - sensitive]'
+                }
+              }
+            }
+
+            // Scrub vault values from all string data
+            const vaultValues = getAllDecryptedValues()
+            if (Object.keys(vaultValues).length > 0 && result.data) {
+              for (const [dataKey, dataVal] of Object.entries(result.data)) {
+                if (typeof dataVal === 'string') {
+                  let scrubbed = dataVal
+                  for (const [vaultKey, vaultVal] of Object.entries(vaultValues)) {
+                    if (vaultVal && scrubbed.includes(vaultVal)) {
+                      scrubbed = scrubbed.replaceAll(vaultVal, `[VAULT:${vaultKey}]`)
+                    }
+                  }
+                  result.data[dataKey] = scrubbed
                 }
               }
             }

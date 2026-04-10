@@ -130,6 +130,12 @@ interface PurroxyAPI {
     delete: (id: string) => Promise<boolean>
     update: (id: string, updates: unknown) => Promise<CapabilityData | undefined>
   }
+  vault: {
+    list: () => Promise<Array<{ id: string; key: string; hasValue: boolean; createdAt: string; updatedAt: string }>>
+    set: (key: string, value: string) => Promise<boolean>
+    delete: (key: string) => Promise<boolean>
+    peek: (key: string) => Promise<string | null>
+  }
   executor: {
     test: (capabilityId: string, paramValues?: Record<string, string>) =>
       Promise<{ success: boolean; data: Record<string, unknown>; error?: string; errorType?: string; durationMs: number; screenshot?: string }>

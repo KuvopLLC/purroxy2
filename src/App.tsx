@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import Home from './views/Home'
 import Library from './views/Library'
 import Settings from './views/Settings'
+import Vault from './views/Vault'
 import Builder from './views/Builder'
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/library" element={<Library />} />
+          <Route path="/vault" element={<Vault />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/builder" element={<Builder />} />
         </Routes>

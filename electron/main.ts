@@ -7,6 +7,7 @@ import { setupRecorder } from './recorder'
 import { setupAI } from './ai'
 import { setupExecutor } from './executor'
 import { startMCPApi } from './mcp-api'
+import { setupVault } from './vault'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -69,6 +70,7 @@ app.whenReady().then(() => {
   setupRecorder(mainWindow!, getSiteView)
   setupAI(mainWindow!, getSiteView)
   setupExecutor(mainWindow!)
+  setupVault()
   startMCPApi()
   setupTray(mainWindow!)
 
