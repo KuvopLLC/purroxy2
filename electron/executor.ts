@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron'
-import { getCapability } from './capabilities'
+import { getCapability, updateCapability } from './capabilities'
 import { getSite, getSession } from './sites'
 import { PlaywrightEngine } from '../core/browser/playwright-engine'
 import type { ExecutionResult } from '../core/browser/types'
@@ -80,6 +80,33 @@ export function setupExecutor(mainWindow: BrowserWindow) {
         }
       }
 
+      // Update capability health status
+      const hasData = Object.values(result.data).some(v => v !== null && v !== undefined)
+      if (result.success) {
+        updateCapability(capabilityId, {
+          healthStatus: 'healthy',
+          consecutiveFailures: 0,
+          lastRunAt: new Date().toISOString(),
+          lastSuccessAt: new Date().toISOString()
+        } as any)
+      } else if (hasData) {
+        // Partial success — degraded
+        const cap2 = getCapability(capabilityId)
+        updateCapability(capabilityId, {
+          healthStatus: 'degraded',
+          consecutiveFailures: (cap2?.consecutiveFailures || 0) + 1,
+          lastRunAt: new Date().toISOString()
+        } as any)
+      } else {
+        const cap2 = getCapability(capabilityId)
+        const failures = (cap2?.consecutiveFailures || 0) + 1
+        updateCapability(capabilityId, {
+          healthStatus: failures >= 3 ? 'broken' : 'degraded',
+          consecutiveFailures: failures,
+          lastRunAt: new Date().toISOString()
+        } as any)
+      }
+
       mainWindow.webContents.send('executor:status', {
         capabilityId,
         status: result.success ? 'completed' : 'failed',
@@ -88,6 +115,13 @@ export function setupExecutor(mainWindow: BrowserWindow) {
 
       return result
     } catch (err: any) {
+      // Fatal error — mark as broken
+      updateCapability(capabilityId, {
+        healthStatus: 'broken',
+        consecutiveFailures: 99,
+        lastRunAt: new Date().toISOString()
+      } as any)
+
       const result: ExecutionResult = {
         success: false,
         data: {},

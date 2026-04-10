@@ -199,6 +199,33 @@ export class PlaywrightEngine {
     })
   }
 
+  private async dismissCookieBanners(): Promise<void> {
+    if (!this.page) return
+    try {
+      await this.page.evaluate(() => {
+        // Common cookie consent selectors
+        const selectors = [
+          '[class*="cookie"] button[class*="accept"]',
+          '[class*="cookie"] button[class*="agree"]',
+          '[class*="consent"] button[class*="accept"]',
+          '[id*="cookie"] button',
+          'button[id*="accept-cookie"]',
+          'button[id*="cookie-accept"]',
+          '[class*="gdpr"] button',
+          'button[aria-label*="Accept"]',
+          'button[aria-label*="accept"]',
+          'button[aria-label*="cookie"]',
+          '[data-testid*="cookie"] button',
+          '.cc-btn.cc-dismiss',
+        ]
+        for (const sel of selectors) {
+          const btn = document.querySelector(sel) as HTMLElement
+          if (btn && btn.offsetParent !== null) { btn.click(); break }
+        }
+      })
+    } catch {} // Silently ignore if no banners
+  }
+
   private optimizeActions(actions: RecordedAction[]): RecordedAction[] {
     const result: RecordedAction[] = []
     let lastNavUrl = ''
@@ -245,6 +272,7 @@ export class PlaywrightEngine {
         if (action.url) {
           await this.page.goto(action.url, { waitUntil: 'domcontentloaded' })
           await this.page.waitForTimeout(500)
+          await this.dismissCookieBanners()
         }
         break
 

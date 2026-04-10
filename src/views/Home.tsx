@@ -1,10 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Globe } from 'lucide-react'
+import { Globe, WifiOff, Zap } from 'lucide-react'
 
 export default function Home() {
   const navigate = useNavigate()
   const [url, setUrl] = useState('')
+  const [offline, setOffline] = useState(!navigator.onLine)
+  const [capCount, setCapCount] = useState(0)
+
+  useEffect(() => {
+    const goOffline = () => setOffline(true)
+    const goOnline = () => setOffline(false)
+    window.addEventListener('offline', goOffline)
+    window.addEventListener('online', goOnline)
+
+    // Get capability count for the home screen
+    window.purroxy.capabilities.getAll().then(caps => setCapCount(caps.length))
+
+    return () => {
+      window.removeEventListener('offline', goOffline)
+      window.removeEventListener('online', goOnline)
+    }
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,6 +36,13 @@ export default function Home() {
       <p className="text-gray-500 dark:text-gray-400 text-center max-w-md mb-8">
         Record what you do on any website. Securely automate it forever.
       </p>
+
+      {offline && (
+        <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-xs text-amber-800 dark:text-amber-300">
+          <WifiOff size={14} />
+          <span>You're offline. Saved capabilities can still run, but building new ones requires internet.</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="w-full max-w-md">
         <div className="flex gap-2">
@@ -42,10 +66,17 @@ export default function Home() {
         </div>
       </form>
 
-      <div className="mt-12 text-sm text-gray-400 dark:text-gray-600">
+      {capCount > 0 && (
+        <div className="mt-6 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
+          <Zap size={14} className="text-accent" />
+          <span>{capCount} capability{capCount !== 1 ? 's' : ''} ready</span>
+        </div>
+      )}
+
+      <div className="mt-8 text-xs text-gray-400 dark:text-gray-600">
         {window.purroxy && (
           <span>
-            Electron {window.purroxy.versions.electron} &middot;{' '}
+            Purroxy v0.1.0 &middot; Electron {window.purroxy.versions.electron} &middot;{' '}
             {window.purroxy.platform}
           </span>
         )}

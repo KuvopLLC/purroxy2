@@ -186,8 +186,9 @@ export default function Library() {
                                       <span>{cap.actions.length} actions</span>
                                       <span>{cap.parameters.length} params</span>
                                       <span className={cap.healthStatus === 'healthy' ? 'text-green-500' : cap.healthStatus === 'degraded' ? 'text-amber-500' : 'text-red-500'}>
-                                        {cap.healthStatus}
+                                        {cap.healthStatus === 'healthy' ? 'healthy' : cap.healthStatus === 'degraded' ? `degraded (${cap.consecutiveFailures} failures)` : `broken (${cap.consecutiveFailures} failures)`}
                                       </span>
+                                      {cap.lastRunAt && <span>last run {new Date(cap.lastRunAt).toLocaleDateString()}</span>}
                                     </div>
                                   </>
                                 )}
