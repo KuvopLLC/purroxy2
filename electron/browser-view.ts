@@ -1,4 +1,5 @@
 import { BrowserWindow, WebContentsView, ipcMain } from 'electron'
+import { getSiteByHostname, getSession } from './sites'
 
 let siteView: WebContentsView | null = null
 
@@ -20,6 +21,12 @@ export function setupBrowserView(mainWindow: BrowserWindow) {
         sandbox: true
       }
     })
+
+    // Use a standard Chrome user agent — Electron's default includes "Electron/"
+    // which some sites detect and serve mobile/degraded layouts
+    siteView.webContents.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    )
 
     mainWindow.contentView.addChildView(siteView)
     positionView(mainWindow)
@@ -47,7 +54,11 @@ export function setupBrowserView(mainWindow: BrowserWindow) {
       return { action: 'deny' }
     })
 
-    siteView.webContents.loadURL(normalizeUrl(url))
+    // Inject saved session cookies before loading
+    const normalized = normalizeUrl(url)
+    injectSavedSession(siteView, normalized).then(() => {
+      siteView!.webContents.loadURL(normalized)
+    })
   })
 
   ipcMain.handle('browser:navigate', (_event, url: string) => {
@@ -100,7 +111,13 @@ export function setupBrowserView(mainWindow: BrowserWindow) {
   ipcMain.handle('browser:captureSession', async () => {
     if (!siteView) return null
     const url = siteView.webContents.getURL()
-    const cookies = await siteView.webContents.session.cookies.get({ url })
+    // Get ALL cookies for this domain (not just the exact URL)
+    const hostname = new URL(url).hostname
+    const domain = hostname.split('.').slice(-2).join('.') // e.g. "yahoo.com" from "mail.yahoo.com"
+    const allCookies = await siteView.webContents.session.cookies.get({})
+    const cookies = allCookies.filter(c =>
+      c.domain && (c.domain === hostname || c.domain === '.' + hostname || c.domain === '.' + domain || c.domain === domain || hostname.endsWith(c.domain.replace(/^\./, '')))
+    )
     const localStorage = await siteView.webContents.executeJavaScript(`
       (() => {
         const items = {};
@@ -128,6 +145,13 @@ export function setupBrowserView(mainWindow: BrowserWindow) {
     return { url, title, faviconUrl }
   })
 
+  // Get the current BrowserView dimensions (for matching viewport in replay)
+  ipcMain.handle('browser:getViewportSize', () => {
+    if (!siteView) return { width: 1280, height: 800 }
+    const bounds = siteView.getBounds()
+    return { width: bounds.width, height: bounds.height }
+  })
+
   // Reposition on window resize
   mainWindow.on('resize', () => {
     positionView(mainWindow)
@@ -152,6 +176,37 @@ function positionView(mainWindow: BrowserWindow) {
       width: browserWidth,
       height: browserHeight
     })
+  }
+}
+
+async function injectSavedSession(view: WebContentsView, url: string): Promise<void> {
+  try {
+    const hostname = new URL(url).hostname
+    const site = getSiteByHostname(hostname)
+    if (!site) return
+
+    const session = getSession(site.id)
+    if (!session) return
+
+    // Inject cookies into the BrowserView's session
+    if (session.cookies && session.cookies.length > 0) {
+      for (const cookie of session.cookies) {
+        try {
+          await view.webContents.session.cookies.set({
+            url: url,
+            name: (cookie as any).name,
+            value: (cookie as any).value,
+            domain: (cookie as any).domain,
+            path: (cookie as any).path || '/',
+            secure: (cookie as any).secure || false,
+            httpOnly: (cookie as any).httpOnly || false
+          })
+        } catch {} // Skip individual cookie errors
+      }
+      console.log(`[BrowserView] Injected ${session.cookies.length} saved cookies for ${hostname}`)
+    }
+  } catch (err) {
+    console.log(`[BrowserView] Failed to inject session: ${err}`)
   }
 }
 

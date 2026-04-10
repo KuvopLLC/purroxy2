@@ -130,6 +130,11 @@ interface PurroxyAPI {
     delete: (id: string) => Promise<boolean>
     update: (id: string, updates: unknown) => Promise<CapabilityData | undefined>
   }
+  executor: {
+    test: (capabilityId: string, paramValues?: Record<string, string>) =>
+      Promise<{ success: boolean; data: Record<string, unknown>; error?: string; errorType?: string; durationMs: number; screenshot?: string }>
+    onStatus: (cb: (status: { capabilityId: string; status: string; result?: unknown }) => void) => () => void
+  }
   system: {
     copyAndOpenClaude: (text: string) => Promise<{ opened: boolean; downloadUrl?: string }>
   }

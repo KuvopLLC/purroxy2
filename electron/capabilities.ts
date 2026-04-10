@@ -26,6 +26,7 @@ export interface Capability {
   actions: Array<Record<string, unknown>>
   parameters: Parameter[]
   extractionRules: ExtractionRule[]
+  viewport?: { width: number; height: number }
   preferredEngine: 'playwright' | 'puppeteer' | 'cdp'
   healthStatus: 'healthy' | 'degraded' | 'broken'
   consecutiveFailures: number

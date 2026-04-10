@@ -37,13 +37,15 @@ const CONTEXT_SCRIPT = `
   }
 
   function getLabel(el) {
-    // Walk up to find a label
+    // Walk up to find a meaningful label
     const ariaLabel = el.getAttribute('aria-label');
     if (ariaLabel) return ariaLabel;
     const title = el.getAttribute('title');
     if (title) return title;
     const placeholder = el.getAttribute('placeholder');
     if (placeholder) return placeholder;
+    const dataTooltip = el.getAttribute('data-tooltip') || el.getAttribute('data-tip');
+    if (dataTooltip) return dataTooltip;
     // Check for associated <label>
     if (el.id) {
       const lbl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
@@ -52,18 +54,89 @@ const CONTEXT_SCRIPT = `
     // Check parent label
     const parentLabel = el.closest('label');
     if (parentLabel) return parentLabel.textContent.trim().slice(0, 80);
-    // Nearby text
+    // Direct text content (not children's text)
+    const directText = Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join(' ').trim();
+    if (directText && directText.length > 1) return directText.slice(0, 80);
+    // Inner text
     const text = (el.innerText || el.textContent || '').trim().slice(0, 80);
-    if (text) return text;
+    if (text && text.length > 1) return text;
+    // Walk UP: check parent's text (for icon-only buttons inside labeled containers)
+    let parent = el.parentElement;
+    for (let i = 0; i < 3 && parent; i++) {
+      const pLabel = parent.getAttribute('aria-label') || parent.getAttribute('title');
+      if (pLabel) return pLabel;
+      const pText = (parent.innerText || '').trim();
+      if (pText && pText.length > 1 && pText.length < 60) return pText;
+      parent = parent.parentElement;
+    }
+    // Walk SIDEWAYS: check previous sibling text (common: <span>Label</span><button>...</button>)
+    const prev = el.previousElementSibling;
+    if (prev) {
+      const sibText = (prev.innerText || prev.textContent || '').trim();
+      if (sibText && sibText.length > 1 && sibText.length < 60) return sibText;
+    }
     return el.tagName.toLowerCase();
   }
 
   // Get element info at coordinates
+  // Build multiple locator strategies for an element
+  function getLocators(el) {
+    const locators = [];
+    const tag = el.tagName.toLowerCase();
+
+    // 1. ID
+    if (el.id) locators.push({ strategy: 'css', value: '#' + CSS.escape(el.id) });
+
+    // 2. data-testid / data-cy / data-test
+    for (const attr of ['data-testid', 'data-cy', 'data-test']) {
+      const val = el.getAttribute(attr);
+      if (val) locators.push({ strategy: 'testid', value: val, attr });
+    }
+
+    // 3. Role + name (most robust for SPAs)
+    const role = el.getAttribute('role') || (tag === 'button' ? 'button' : tag === 'a' ? 'link' : tag === 'input' ? 'textbox' : '');
+    const name = el.getAttribute('aria-label') || el.getAttribute('title') || (el.innerText || '').trim().slice(0, 60);
+    if (role && name && name.length > 1) locators.push({ strategy: 'role', value: role, name: name });
+
+    // 4. Text content (for buttons, links, spans)
+    const text = (el.innerText || el.textContent || '').trim().slice(0, 80);
+    if (text && text.length > 1 && text.length < 80) locators.push({ strategy: 'text', value: text });
+
+    // 5. aria-label
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel) locators.push({ strategy: 'aria', value: ariaLabel });
+
+    // 6. Name attribute (for form elements)
+    if (el.name) locators.push({ strategy: 'css', value: tag + '[name="' + CSS.escape(el.name) + '"]' });
+
+    // 7. Placeholder
+    const placeholder = el.getAttribute('placeholder');
+    if (placeholder) locators.push({ strategy: 'placeholder', value: placeholder });
+
+    // 8. Nearby text (parent or sibling context)
+    let nearbyText = '';
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      nearbyText = (parentEl.getAttribute('aria-label') || parentEl.getAttribute('title') || '');
+      if (!nearbyText) {
+        const prev = el.previousElementSibling;
+        if (prev) nearbyText = (prev.innerText || '').trim().slice(0, 60);
+      }
+    }
+    if (nearbyText && nearbyText.length > 1) locators.push({ strategy: 'nearby', value: nearbyText, tag });
+
+    // 9. CSS path (least robust, last resort)
+    locators.push({ strategy: 'css', value: getSelector(el) });
+
+    return locators;
+  }
+
   window.__purroxyElementAt = function(x, y) {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
     return {
       selector: getSelector(el),
+      locators: getLocators(el),
       tagName: el.tagName.toLowerCase(),
       label: getLabel(el),
       isInput: ['INPUT','TEXTAREA','SELECT'].includes(el.tagName),
@@ -274,7 +347,7 @@ export function setupRecorder(mainWindow: BrowserWindow, getSiteView: () => WebC
     // Track recently emitted clicks to deduplicate between input-event and backup queue
     let recentClicks: string[] = []
 
-    function emitClick(info: { selector: string; tagName: string; label: string }) {
+    function emitClick(info: { selector: string; tagName: string; label: string; locators?: any[] }) {
       const key = info.selector + '|' + info.label
       if (recentClicks.includes(key)) return // Dedup
       recentClicks.push(key)
@@ -284,6 +357,7 @@ export function setupRecorder(mainWindow: BrowserWindow, getSiteView: () => WebC
         type: 'click',
         timestamp: Date.now(),
         selector: info.selector,
+        locators: info.locators || [],
         tagName: info.tagName,
         label: info.label
       })

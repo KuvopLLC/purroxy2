@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('purroxy', {
       ipcRenderer.on('browser:title-changed', handler)
       return () => ipcRenderer.removeListener('browser:title-changed', handler)
     },
+    getViewportSize: () => ipcRenderer.invoke('browser:getViewportSize'),
     onLoading: (cb: (loading: boolean) => void) => {
       const handler = (_e: unknown, loading: boolean) => cb(loading)
       ipcRenderer.on('browser:loading', handler)
@@ -71,6 +72,19 @@ contextBridge.exposeInMainWorld('purroxy', {
     create: (data: unknown) => ipcRenderer.invoke('capabilities:create', data),
     delete: (id: string) => ipcRenderer.invoke('capabilities:delete', id),
     update: (id: string, updates: unknown) => ipcRenderer.invoke('capabilities:update', id, updates)
+  },
+  executor: {
+    test: (capabilityId: string, paramValues?: Record<string, string>, options?: { visible?: boolean }) =>
+      ipcRenderer.invoke('executor:test', capabilityId, paramValues, options),
+    onStatus: (cb: (status: unknown) => void) => {
+      const handler = (_e: unknown, status: unknown) => cb(status)
+      ipcRenderer.on('executor:status', handler)
+      return () => ipcRenderer.removeListener('executor:status', handler)
+    }
+  },
+  window: {
+    expandForRecording: () => ipcRenderer.invoke('window:expandForRecording'),
+    restoreSize: () => ipcRenderer.invoke('window:restoreSize')
   },
   system: {
     copyAndOpenClaude: (text: string) => ipcRenderer.invoke('system:copyAndOpenClaude', text)

@@ -5,6 +5,7 @@ import { setupIPC } from './ipc'
 import { setupBrowserView, getSiteView } from './browser-view'
 import { setupRecorder } from './recorder'
 import { setupAI } from './ai'
+import { setupExecutor } from './executor'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -59,6 +60,7 @@ app.whenReady().then(() => {
   setupBrowserView(mainWindow!)
   setupRecorder(mainWindow!, getSiteView)
   setupAI(mainWindow!, getSiteView)
+  setupExecutor(mainWindow!)
   setupTray(mainWindow!)
 
   app.on('activate', () => {

@@ -59,6 +59,30 @@ export function setupIPC() {
     return updateCapability(id, updates)
   })
 
+  // Window management
+  let savedBounds: Electron.Rectangle | null = null
+  ipcMain.handle('window:expandForRecording', () => {
+    const wins = require('electron').BrowserWindow.getAllWindows()
+    const win = wins[0]
+    if (!win) return
+    savedBounds = win.getBounds()
+    const { screen } = require('electron')
+    const display = screen.getDisplayMatching(savedBounds)
+    // Expand to ~90% of screen width, keep height
+    const newWidth = Math.round(display.workArea.width * 0.9)
+    const newX = Math.round(display.workArea.x + (display.workArea.width - newWidth) / 2)
+    win.setBounds({ x: newX, y: savedBounds.y, width: newWidth, height: savedBounds.height }, true)
+  })
+
+  ipcMain.handle('window:restoreSize', () => {
+    if (!savedBounds) return
+    const wins = require('electron').BrowserWindow.getAllWindows()
+    const win = wins[0]
+    if (!win) return
+    win.setBounds(savedBounds, true)
+    savedBounds = null
+  })
+
   // System
   ipcMain.handle('system:copyAndOpenClaude', async (_event, text: string) => {
     clipboard.writeText(text)

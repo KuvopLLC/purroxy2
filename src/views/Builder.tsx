@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { ArrowLeft, ArrowRight, RotateCw, X, Loader2, Circle, Square, MousePointerClick, Type, Navigation, List, ArrowDown, Clock, Save, ShieldCheck, CheckCircle, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ArrowRight, RotateCw, X, Loader2, Circle, Square, MousePointerClick, Type, Navigation, List, ArrowDown, Clock, Save, ShieldCheck, CheckCircle, ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 
@@ -38,6 +38,7 @@ export default function Builder() {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [autoAnalyzed, setAutoAnalyzed] = useState(false)
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
   // Track which buttons have been clicked (by message index + button type)
   const [clickedButtons, setClickedButtons] = useState<Set<string>>(new Set())
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0 })
@@ -72,17 +73,8 @@ export default function Builder() {
       if (autoAnalyzed) return
       setAutoAnalyzed(true)
 
-      // Check if we already have a saved session for this site
-      const sites = await window.purroxy.sites.getAll()
-      const hostname = originHostname || (() => { try { return new URL(url.includes('://') ? url : 'https://' + url).hostname } catch { return '' } })()
-      const hasSavedSession = sites.some(s => s.hostname === hostname && s.sessionEncrypted)
-
-      if (hasSavedSession) {
-        setSessionSaved(true)
-        await sendAIMessage('I\'m already logged in to this site (session saved). Suggest capabilities I could build.', { hidden: true })
-      } else {
-        await sendAIMessage('Check this page. If it\'s a dedicated login page (password field is the main content), tell me to log in and show the Done button. If it looks like I\'m already on the site\'s main content, suggest capabilities.', { hidden: true })
-      }
+      // Always let the AI check the actual page content — don't assume saved session means logged in
+      await sendAIMessage('Check this page. If it\'s a dedicated login page (password field is the main content), tell me to log in and show the Done button. If it looks like I\'m already on the site\'s main content, suggest capabilities.', { hidden: true })
     }, 1500)
     return () => clearTimeout(timer)
   }, [browserOpen, loading, autoAnalyzed, url])
@@ -172,9 +164,10 @@ export default function Builder() {
     const ok = await window.purroxy.recorder.start()
     if (ok) {
       setIsRecording(true)
+      await window.purroxy.window.expandForRecording() // Widen the app so the browser sees the full desktop layout
       setChatMessages(prev => [...prev, {
         role: 'system',
-        content: '🔴 **Recording started.** Explore the site freely — click, navigate, fill forms. You can\'t go wrong. Mistakes are fine, I\'ll figure out what matters. The more you show me, the better.\n\n{{STOP_RECORDING}}'
+        content: '🔴 **Recording started.** The window expanded so the browser shows the full desktop layout — this ensures what you see now matches what replay will see. Explore freely, I\'m watching.\n\n{{STOP_RECORDING}}'
       }])
     }
   }
@@ -182,6 +175,7 @@ export default function Builder() {
   const handleStopRecording = async () => {
     await window.purroxy.recorder.stop()
     setIsRecording(false)
+    await window.purroxy.window.restoreSize() // Restore the window to its original size
     const count = actionsRef.current.length
     // Show clean message to user
     setChatMessages(prev => [...prev, {
@@ -223,13 +217,17 @@ export default function Builder() {
     const cap = result.capability!
 
     // Save the capability
+    // Save the viewport size so replay uses the same dimensions
+    const viewport = await window.purroxy.browser.getViewportSize()
+
     const saved = await window.purroxy.capabilities.create({
       siteProfileId: site.id,
       name: cap.name,
       description: cap.description,
       actions: actionsRef.current,
       parameters: cap.parameters,
-      extractionRules: cap.extractionRules
+      extractionRules: cap.extractionRules,
+      viewport
     })
 
     setCapabilitySaved(true)
@@ -266,6 +264,7 @@ export default function Builder() {
     const ok = await window.purroxy.recorder.start()
     if (ok) {
       setIsRecording(true)
+      await window.purroxy.window.expandForRecording()
       setChatMessages(prev => [...prev, {
         role: 'system',
         content: '🔴 **Re-recording started.** Show me the updated workflow. The old recording will be replaced when you save.\n\n{{STOP_RECORDING}}'
@@ -296,6 +295,18 @@ export default function Builder() {
     await sendAIMessage(`I want to build another capability for ${siteName}. What do you suggest?`)
   }
 
+  const handleResetChat = async () => {
+    setChatMessages([])
+    setChatLoading(false)
+    setAutoAnalyzed(false)
+    setActions([])
+    setCapabilitySaved(false)
+    setSavedCapName('')
+    setSavedCapDescription('')
+    setClickedButtons(new Set())
+    // Re-analyze will trigger via the useEffect since autoAnalyzed is false
+  }
+
   const handleClose = async () => {
     if (isRecording) await window.purroxy.recorder.stop()
     await window.purroxy.browser.close()
@@ -307,22 +318,35 @@ export default function Builder() {
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ width: 380 }}>
+    <div className="flex flex-col h-full transition-all duration-200" style={{ width: panelCollapsed ? 48 : 380 }}>
       {/* Navigation bar */}
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-black/5 dark:border-white/5">
-        <button onClick={() => window.purroxy.browser.back()} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Back"><ArrowLeft size={16} /></button>
-        <button onClick={() => window.purroxy.browser.forward()} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Forward"><ArrowRight size={16} /></button>
-        <button onClick={() => window.purroxy.browser.reload()} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Reload">
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}
-        </button>
-        <form onSubmit={handleUrlSubmit} className="flex-1 mx-1">
-          <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="Enter a website URL..." className="w-full px-3 py-1.5 rounded-md bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50" />
-        </form>
-        <button onClick={handleClose} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Close"><X size={16} /></button>
+      <div className="flex items-center gap-1 px-2 py-2 border-b border-black/5 dark:border-white/5">
+        {panelCollapsed ? (
+          /* Collapsed: just show expand button */
+          <button onClick={() => setPanelCollapsed(false)} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Expand panel">
+            <PanelLeftOpen size={16} />
+          </button>
+        ) : (
+          /* Expanded: full nav bar */
+          <>
+            <button onClick={() => setPanelCollapsed(true)} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Collapse panel for wider browser">
+              <PanelLeftClose size={16} />
+            </button>
+            <button onClick={() => window.purroxy.browser.back()} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Back"><ArrowLeft size={16} /></button>
+            <button onClick={() => window.purroxy.browser.forward()} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Forward"><ArrowRight size={16} /></button>
+            <button onClick={() => window.purroxy.browser.reload()} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Reload">
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}
+            </button>
+            <form onSubmit={handleUrlSubmit} className="flex-1 mx-1">
+              <input type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="Enter a website URL..." className="w-full px-3 py-1.5 rounded-md bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50" />
+            </form>
+            <button onClick={handleClose} className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400" title="Close"><X size={16} /></button>
+          </>
+        )}
       </div>
 
       {/* Tab bar */}
-      {browserOpen && (
+      {browserOpen && !panelCollapsed && (
         <div className="flex border-b border-black/5 dark:border-white/5">
           <button onClick={() => setTab('chat')} className={`flex-1 py-2 text-xs font-medium transition-colors ${tab === 'chat' ? 'text-accent border-b-2 border-accent' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}>
             Chat {chatLoading && <Loader2 size={10} className="inline ml-1 animate-spin" />}
@@ -335,7 +359,16 @@ export default function Builder() {
         </div>
       )}
 
+      {/* Collapsed state: show recording indicator and action count */}
+      {panelCollapsed && isRecording && (
+        <div className="flex flex-col items-center py-2 gap-1 border-b border-black/5 dark:border-white/5">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-[10px] text-red-500">{actions.length}</span>
+        </div>
+      )}
+
       {/* Panel content */}
+      {panelCollapsed ? null : (
       <div className="flex-1 flex flex-col min-h-0">
         {!browserOpen ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
@@ -360,19 +393,21 @@ export default function Builder() {
             onBuildAnother={handleBuildAnother}
             onCopyForClaude={handleCopyForClaude}
             onReRecord={handleReRecord}
+            onResetChat={handleResetChat}
             tokenUsage={tokenUsage}
           />
         ) : (
           <RecordingPanel isRecording={isRecording} actions={actions} onStart={handleStartRecording} onStop={handleStopRecording} />
         )}
       </div>
+      )}
     </div>
   )
 }
 
 /* ============ Chat Panel ============ */
 
-function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecording, sessionSaved, capabilitySaved, clickedButtons, onButtonClick, onStartRecording, onStopRecording, onSaveSession, onSaveCapability, onBuildAnother, onCopyForClaude, onReRecord, tokenUsage }: {
+function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecording, sessionSaved, capabilitySaved, clickedButtons, onButtonClick, onStartRecording, onStopRecording, onSaveSession, onSaveCapability, onBuildAnother, onCopyForClaude, onReRecord, onResetChat, tokenUsage }: {
   messages: ChatMessage[]
   loading: boolean
   input: string
@@ -390,6 +425,7 @@ function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecordin
   onBuildAnother: () => Promise<void>
   onCopyForClaude: () => Promise<void>
   onReRecord: () => Promise<void>
+  onResetChat: () => Promise<void>
   tokenUsage: { input: number; output: number }
 }) {
   const endRef = useRef<HTMLDivElement>(null)
@@ -532,11 +568,18 @@ function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecordin
       </div>
 
       <div className="flex-shrink-0 border-t border-black/5 dark:border-white/5">
-        {(tokenUsage.input > 0 || tokenUsage.output > 0) && (
-          <div className="px-3 pt-2 text-[10px] text-gray-400 dark:text-gray-500">
-            Tokens: {(tokenUsage.input + tokenUsage.output).toLocaleString()} ({tokenUsage.input.toLocaleString()} in / {tokenUsage.output.toLocaleString()} out)
+        <div className="flex items-center justify-between px-3 pt-2">
+          <div className="text-[10px] text-gray-400 dark:text-gray-500">
+            {(tokenUsage.input > 0 || tokenUsage.output > 0) && (
+              <>Tokens: {(tokenUsage.input + tokenUsage.output).toLocaleString()}</>
+            )}
           </div>
-        )}
+          {messages.length > 0 && (
+            <button onClick={onResetChat} className="text-[10px] text-gray-400 hover:text-accent transition-colors">
+              Reset chat
+            </button>
+          )}
+        </div>
         <form onSubmit={handleSubmit} className="p-3 pt-1.5">
           <div className="flex gap-2">
             <input type="text" value={input} onChange={(e) => onInputChange(e.target.value)}
