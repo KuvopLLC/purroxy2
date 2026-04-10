@@ -107,7 +107,7 @@ interface PurroxyAPI {
   ai: {
     getPageContent: () => Promise<string>
     chat: (messages: Array<{ role: string; content: string }>, pageContext?: string) =>
-      Promise<{ content?: string; error?: string }>
+      Promise<{ content?: string; error?: string; usage?: { input: number; output: number } }>
     generateCapability: (actions: unknown[], chatHistory: Array<{ role: string; content: string }>) =>
       Promise<{ capability?: { name: string; description: string; parameters: CapabilityParameter[]; extractionRules: CapabilityExtractionRule[] }; error?: string }>
   }
@@ -129,6 +129,9 @@ interface PurroxyAPI {
     create: (data: unknown) => Promise<CapabilityData>
     delete: (id: string) => Promise<boolean>
     update: (id: string, updates: unknown) => Promise<CapabilityData | undefined>
+  }
+  system: {
+    copyAndOpenClaude: (text: string) => Promise<{ opened: boolean; downloadUrl?: string }>
   }
 }
 

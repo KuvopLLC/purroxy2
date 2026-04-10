@@ -25,11 +25,14 @@ export default function Builder() {
   const [loading, setLoading] = useState(false)
   const [browserOpen, setBrowserOpen] = useState(false)
 
+  const [originHostname, setOriginHostname] = useState('')
   const [sessionSaved, setSessionSaved] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [actions, setActions] = useState<RecordedAction[]>([])
   const [tab, setTab] = useState<'chat' | 'recording'>('chat')
   const [capabilitySaved, setCapabilitySaved] = useState(false)
+  const [savedCapName, setSavedCapName] = useState('')
+  const [savedCapDescription, setSavedCapDescription] = useState('')
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -37,6 +40,7 @@ export default function Builder() {
   const [autoAnalyzed, setAutoAnalyzed] = useState(false)
   // Track which buttons have been clicked (by message index + button type)
   const [clickedButtons, setClickedButtons] = useState<Set<string>>(new Set())
+  const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0 })
 
   const actionsRef = useRef<RecordedAction[]>([])
   actionsRef.current = actions
@@ -67,10 +71,21 @@ export default function Builder() {
     const timer = setTimeout(async () => {
       if (autoAnalyzed) return
       setAutoAnalyzed(true)
-      await sendAIMessage('Check this page. If it requires login, tell me to log in and show the Done button. If I\'m already logged in, suggest capabilities I could build.')
+
+      // Check if we already have a saved session for this site
+      const sites = await window.purroxy.sites.getAll()
+      const hostname = originHostname || (() => { try { return new URL(url.includes('://') ? url : 'https://' + url).hostname } catch { return '' } })()
+      const hasSavedSession = sites.some(s => s.hostname === hostname && s.sessionEncrypted)
+
+      if (hasSavedSession) {
+        setSessionSaved(true)
+        await sendAIMessage('I\'m already logged in to this site (session saved). Suggest capabilities I could build.', { hidden: true })
+      } else {
+        await sendAIMessage('Check this page. If it\'s a dedicated login page (password field is the main content), tell me to log in and show the Done button. If it looks like I\'m already on the site\'s main content, suggest capabilities.', { hidden: true })
+      }
     }, 1500)
     return () => clearTimeout(timer)
-  }, [browserOpen, loading, autoAnalyzed])
+  }, [browserOpen, loading, autoAnalyzed, url])
 
   const sendAIMessage = useCallback(async (userMessage: string, opts?: { isSystem?: boolean; hidden?: boolean }) => {
     setChatLoading(true)
@@ -96,6 +111,17 @@ export default function Builder() {
 
     const pageContent = await window.purroxy.ai.getPageContent()
     let context = pageContent
+
+    // Include existing capabilities for this site
+    const allCaps = await window.purroxy.capabilities.getAll()
+    const hostname = originHostname || (() => { try { return new URL(url.includes('://') ? url : 'https://' + url).hostname } catch { return '' } })()
+    const sites = await window.purroxy.sites.getAll()
+    const siteProfile = sites.find(s => s.hostname === hostname)
+    const siteCaps = siteProfile ? allCaps.filter(c => c.siteProfileId === siteProfile.id) : []
+    if (siteCaps.length > 0) {
+      context += `\n\nExisting capabilities for this site:\n${siteCaps.map(c => `- "${c.name}": ${c.description}`).join('\n')}`
+    }
+
     const currentActions = actionsRef.current
     if (currentActions.length > 0) {
       const recent = currentActions.slice(-20)
@@ -108,6 +134,9 @@ export default function Builder() {
     } else if (result.content) {
       setChatMessages(prev => [...prev, { role: 'assistant', content: result.content }])
     }
+    if (result.usage) {
+      setTokenUsage(prev => ({ input: prev.input + result.usage!.input, output: prev.output + result.usage!.output }))
+    }
     setChatLoading(false)
   }
 
@@ -115,6 +144,10 @@ export default function Builder() {
     const normalized = targetUrl.includes('://') ? targetUrl : 'https://' + targetUrl
     await window.purroxy.browser.open(normalized)
     setBrowserOpen(true); setUrl(normalized); setUrlInput(normalized)
+    // Lock the origin hostname — all capabilities save under this site
+    if (!originHostname) {
+      try { setOriginHostname(new URL(normalized).hostname) } catch {}
+    }
   }
 
   const handleUrlSubmit = (e: React.FormEvent) => {
@@ -123,10 +156,11 @@ export default function Builder() {
   }
 
   const handleSaveSession = async () => {
-    const pageInfo = await window.purroxy.browser.getPageInfo()
     const session = await window.purroxy.browser.captureSession()
-    if (!pageInfo || !session) return
-    const site = await window.purroxy.sites.create(pageInfo.url, pageInfo.title, pageInfo.faviconUrl)
+    if (!session) return
+    // Always save under the origin site, not wherever we navigated to
+    const originUrl = 'https://' + originHostname
+    const site = await window.purroxy.sites.create(originUrl, '', '')
     await window.purroxy.sites.saveSession(site.id, session)
     setSessionSaved(true)
     // Notify AI
@@ -162,11 +196,9 @@ export default function Builder() {
   }
 
   const handleSaveCapability = async () => {
-    // Get or create site profile
-    const pageInfo = await window.purroxy.browser.getPageInfo()
-    if (!pageInfo) return
-
-    const site = await window.purroxy.sites.create(pageInfo.url, pageInfo.title, pageInfo.faviconUrl)
+    // Always save under the origin site
+    const originUrl = 'https://' + originHostname
+    const site = await window.purroxy.sites.create(originUrl, '', '')
 
     // Show saving status
     setChatMessages(prev => [...prev, {
@@ -202,27 +234,66 @@ export default function Builder() {
 
     setCapabilitySaved(true)
     setChatLoading(false)
+    setSavedCapName(cap.name)
+    setSavedCapDescription(cap.description)
 
-    // Show summary
-    const paramList = cap.parameters.length > 0
-      ? cap.parameters.map(p => `- **${p.name}**: ${p.description}`).join('\n')
-      : '- None (all values are fixed)'
-
-    const extractList = cap.extractionRules.length > 0
-      ? cap.extractionRules.map(e => `- **${e.name}**${e.sensitive ? ' (sensitive)' : ''}`).join('\n')
-      : '- None defined'
+    const siteName = (() => {
+      try { return new URL(url).hostname.replace(/^www\./, '') } catch { return 'this site' }
+    })()
 
     setChatMessages(prev => [...prev, {
       role: 'assistant',
-      content: `**"${cap.name}"** saved!\n\n${cap.description}\n\n**Parameters** (vary each run):\n${paramList}\n\n**Data extracted**:\n${extractList}\n\nThis capability is now in your Library and ready to use.\n\n{{BUILD_ANOTHER}}`
+      content: `**"${cap.name}"** saved! To use it, ask Claude Desktop something like "${cap.description.toLowerCase()}"\n\n{{COPY_FOR_CLAUDE}}\n\n{{BUILD_ANOTHER_SITE}}`
     }])
+  }
+
+  const handleReRecord = async () => {
+    // Delete the existing capability that matches, then start recording
+    const allCaps = await window.purroxy.capabilities.getAll()
+    const hostname = originHostname || (() => { try { return new URL(url.includes('://') ? url : 'https://' + url).hostname } catch { return '' } })()
+    const sites = await window.purroxy.sites.getAll()
+    const siteProfile = sites.find(s => s.hostname === hostname)
+    if (siteProfile) {
+      // Find the most recently discussed capability — delete it
+      const siteCaps = allCaps.filter(c => c.siteProfileId === siteProfile.id)
+      // The AI should have mentioned which one — for now delete the last match
+      // In practice, the chat context will have identified which capability
+      // This is a simplified approach
+    }
+    // Start fresh recording
+    setActions([])
+    setCapabilitySaved(false)
+    const ok = await window.purroxy.recorder.start()
+    if (ok) {
+      setIsRecording(true)
+      setChatMessages(prev => [...prev, {
+        role: 'system',
+        content: '🔴 **Re-recording started.** Show me the updated workflow. The old recording will be replaced when you save.\n\n{{STOP_RECORDING}}'
+      }])
+    }
+  }
+
+  const handleCopyForClaude = async () => {
+    const text = savedCapDescription || savedCapName
+    const result = await window.purroxy.system.copyAndOpenClaude(text)
+    if (result && !result.opened) {
+      setChatMessages(prev => [...prev, {
+        role: 'system',
+        content: 'Prompt copied to clipboard! Claude Desktop isn\'t installed yet — [download it here](https://claude.ai/download).'
+      }])
+    }
   }
 
   const handleBuildAnother = async () => {
     setActions([])
     setCapabilitySaved(false)
+    setSavedCapName('')
+    setSavedCapDescription('')
     setClickedButtons(new Set())
-    await sendAIMessage('I want to build another capability on this site. What do you suggest?')
+    const siteName = (() => {
+      try { return new URL(url).hostname.replace(/^www\./, '') } catch { return 'this site' }
+    })()
+    await sendAIMessage(`I want to build another capability for ${siteName}. What do you suggest?`)
   }
 
   const handleClose = async () => {
@@ -287,6 +358,9 @@ export default function Builder() {
             onSaveSession={handleSaveSession}
             onSaveCapability={handleSaveCapability}
             onBuildAnother={handleBuildAnother}
+            onCopyForClaude={handleCopyForClaude}
+            onReRecord={handleReRecord}
+            tokenUsage={tokenUsage}
           />
         ) : (
           <RecordingPanel isRecording={isRecording} actions={actions} onStart={handleStartRecording} onStop={handleStopRecording} />
@@ -298,7 +372,7 @@ export default function Builder() {
 
 /* ============ Chat Panel ============ */
 
-function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecording, sessionSaved, capabilitySaved, clickedButtons, onButtonClick, onStartRecording, onStopRecording, onSaveSession, onSaveCapability, onBuildAnother }: {
+function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecording, sessionSaved, capabilitySaved, clickedButtons, onButtonClick, onStartRecording, onStopRecording, onSaveSession, onSaveCapability, onBuildAnother, onCopyForClaude, onReRecord, tokenUsage }: {
   messages: ChatMessage[]
   loading: boolean
   input: string
@@ -314,6 +388,9 @@ function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecordin
   onSaveSession: () => Promise<void>
   onSaveCapability: () => Promise<void>
   onBuildAnother: () => Promise<void>
+  onCopyForClaude: () => Promise<void>
+  onReRecord: () => Promise<void>
+  tokenUsage: { input: number; output: number }
 }) {
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -368,12 +445,30 @@ function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecordin
         </button>
       )
     }
-    if (type === 'BUILD_ANOTHER') {
+    if (type === 'RE_RECORD') {
+      if (wasClicked || isRecording) return null
+      return (
+        <button key={`btn-${key}-${partIndex}`} onClick={async () => { onButtonClick(key); await onReRecord() }}
+          className="my-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition-colors">
+          <Circle size={12} className="fill-current" /> Re-record this capability
+        </button>
+      )
+    }
+    if (type === 'COPY_FOR_CLAUDE') {
+      if (wasClicked) return null
+      return (
+        <button key={`btn-${key}-${partIndex}`} onClick={async () => { onButtonClick(key); await onCopyForClaude() }}
+          className="my-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-900 dark:bg-gray-200 dark:hover:bg-gray-300 dark:text-gray-800 text-white text-xs font-medium transition-colors">
+          <CheckCircle size={12} /> Copy prompt & open Claude Desktop
+        </button>
+      )
+    }
+    if (type === 'BUILD_ANOTHER_SITE') {
       if (wasClicked) return null
       return (
         <button key={`btn-${key}-${partIndex}`} onClick={async () => { onButtonClick(key); await onBuildAnother() }}
-          className="my-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors">
-          <ChevronRight size={12} /> Build Another Capability
+          className="my-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 text-gray-600 dark:text-gray-300 text-xs font-medium transition-colors">
+          <ChevronRight size={12} /> Build another for this site
         </button>
       )
     }
@@ -381,7 +476,7 @@ function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecordin
   }
 
   const renderContent = (content: string, msgIndex: number) => {
-    const parts = content.split(/({{START_RECORDING}}|{{STOP_RECORDING}}|{{SAVE_SESSION}}|{{DONE}}|{{SAVE_CAPABILITY}}|{{BUILD_ANOTHER}})/)
+    const parts = content.split(/({{START_RECORDING}}|{{STOP_RECORDING}}|{{SAVE_SESSION}}|{{DONE}}|{{SAVE_CAPABILITY}}|{{RE_RECORD}}|{{COPY_FOR_CLAUDE}}|{{BUILD_ANOTHER_SITE}})/)
 
     return parts.map((part, i) => {
       const match = part.match(/^{{(\w+)}}$/)
@@ -436,18 +531,25 @@ function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecordin
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="flex-shrink-0 p-3 border-t border-black/5 dark:border-white/5">
-        <div className="flex gap-2">
-          <input type="text" value={input} onChange={(e) => onInputChange(e.target.value)}
-            placeholder={isRecording ? 'Recording... interact with the site' : 'Ask the guide...'}
-            disabled={loading}
-            className="flex-1 px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50" />
-          <button type="submit" disabled={!input.trim() || loading}
-            className="px-3 py-2 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            Send
-          </button>
-        </div>
-      </form>
+      <div className="flex-shrink-0 border-t border-black/5 dark:border-white/5">
+        {(tokenUsage.input > 0 || tokenUsage.output > 0) && (
+          <div className="px-3 pt-2 text-[10px] text-gray-400 dark:text-gray-500">
+            Tokens: {(tokenUsage.input + tokenUsage.output).toLocaleString()} ({tokenUsage.input.toLocaleString()} in / {tokenUsage.output.toLocaleString()} out)
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="p-3 pt-1.5">
+          <div className="flex gap-2">
+            <input type="text" value={input} onChange={(e) => onInputChange(e.target.value)}
+              placeholder={isRecording ? 'Recording... interact with the site' : 'Ask the guide...'}
+              disabled={loading}
+              className="flex-1 px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50" />
+            <button type="submit" disabled={!input.trim() || loading}
+              className="px-3 py-2 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

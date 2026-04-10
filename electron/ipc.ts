@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell, clipboard } from 'electron'
 import { store } from './store'
 import { getAllSites, createSite, saveSession, deleteSite } from './sites'
 import { getAllCapabilities, getCapabilitiesForSite, createCapability, deleteCapability, updateCapability } from './capabilities'
@@ -57,5 +57,34 @@ export function setupIPC() {
 
   ipcMain.handle('capabilities:update', (_event, id: string, updates: any) => {
     return updateCapability(id, updates)
+  })
+
+  // System
+  ipcMain.handle('system:copyAndOpenClaude', async (_event, text: string) => {
+    clipboard.writeText(text)
+
+    const { execSync, exec } = require('child_process')
+    const fs = require('fs')
+
+    // Check if Claude Desktop is installed
+    let installed = false
+    if (process.platform === 'darwin') {
+      installed = fs.existsSync('/Applications/Claude.app')
+    } else if (process.platform === 'win32') {
+      try { execSync('where claude', { stdio: 'ignore' }); installed = true } catch { installed = false }
+    } else {
+      try { execSync('which claude', { stdio: 'ignore' }); installed = true } catch { installed = false }
+    }
+
+    if (installed) {
+      if (process.platform === 'darwin') {
+        exec('open -a "Claude"')
+      } else if (process.platform === 'win32') {
+        exec('start "" "Claude"')
+      }
+      return { opened: true }
+    } else {
+      return { opened: false, downloadUrl: 'https://claude.ai/download' }
+    }
   })
 }

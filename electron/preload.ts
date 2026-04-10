@@ -71,5 +71,8 @@ contextBridge.exposeInMainWorld('purroxy', {
     create: (data: unknown) => ipcRenderer.invoke('capabilities:create', data),
     delete: (id: string) => ipcRenderer.invoke('capabilities:delete', id),
     update: (id: string, updates: unknown) => ipcRenderer.invoke('capabilities:update', id, updates)
+  },
+  system: {
+    copyAndOpenClaude: (text: string) => ipcRenderer.invoke('system:copyAndOpenClaude', text)
   }
 })
