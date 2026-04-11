@@ -1,14 +1,11 @@
 name: Deploy Backend
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
   workflow_dispatch:
-  # Auto-deploy on push requires CLOUDFLARE_API_TOKEN secret.
-  # Create one at: https://dash.cloudflare.com/profile/api-tokens
-  # Template: "Edit Cloudflare Workers" — then set as repo secret.
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - 'backend/**'
 
 jobs:
   deploy:
