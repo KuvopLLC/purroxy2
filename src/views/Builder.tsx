@@ -160,6 +160,16 @@ export default function Builder() {
   }
 
   const handleStartRecording = async () => {
+    // Check license before recording
+    const { allowed, reason } = await window.purroxy.account.canUse()
+    if (!allowed) {
+      setChatMessages(prev => [...prev, {
+        role: 'system',
+        content: `${reason}\n\n{{SUBSCRIBE}}`
+      }])
+      return
+    }
+
     setActions([])
     const ok = await window.purroxy.recorder.start()
     if (ok) {

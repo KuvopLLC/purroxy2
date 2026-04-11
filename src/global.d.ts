@@ -131,11 +131,19 @@ interface PurroxyAPI {
     update: (id: string, updates: unknown) => Promise<CapabilityData | undefined>
   }
   account: {
-    getStatus: () => Promise<{ loggedIn: boolean; email: string | null; plan: string | null; trialEndsAt: string | null; trialDaysLeft: number | null }>
-    signup: (email: string, password: string) => Promise<{ success?: boolean; error?: string }>
+    getStatus: () => Promise<{
+      loggedIn: boolean; email: string | null; plan: string | null; status: string | null;
+      trialEndsAt: string | null; trialDaysLeft: number | null; accountType: string;
+      emailVerified: boolean; apiUrl: string
+    }>
+    signup: (email: string, password: string) => Promise<{ success?: boolean; error?: string; needsVerification?: boolean }>
     login: (email: string, password: string) => Promise<{ success?: boolean; error?: string }>
     logout: () => Promise<boolean>
     validate: () => Promise<{ valid: boolean; offline?: boolean }>
+    subscribe: () => Promise<{ success?: boolean; error?: string }>
+    manageSubscription: () => Promise<{ success?: boolean; error?: string }>
+    canUse: () => Promise<{ allowed: boolean; reason?: string }>
+    refresh: () => Promise<{ success?: boolean; error?: string; plan?: string; status?: string; accountType?: string }>
   }
   lock: {
     getConfig: () => Promise<{ enabled: boolean; timeoutMinutes: number; hasPin: boolean; isLocked: boolean }>

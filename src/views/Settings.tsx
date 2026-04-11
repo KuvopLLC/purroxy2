@@ -155,15 +155,25 @@ export default function Settings() {
 }
 
 function AccountSection() {
-  const [status, setStatus] = useState<{ loggedIn: boolean; email: string | null; plan: string | null; trialDaysLeft: number | null } | null>(null)
+  const [status, setStatus] = useState<{
+    loggedIn: boolean; email: string | null; plan: string | null; status: string | null;
+    trialEndsAt: string | null; trialDaysLeft: number | null; accountType: string;
+    emailVerified: boolean; apiUrl: string
+  } | null>(null)
   const [showAuth, setShowAuth] = useState<'login' | 'signup' | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const refreshStatus = () => window.purroxy.account.getStatus().then(setStatus)
+
   useEffect(() => {
-    window.purroxy.account.getStatus().then(setStatus)
+    refreshStatus()
+    // Refresh when window regains focus (catches post-checkout state)
+    const onFocus = () => refreshStatus()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [])
 
   const handleAuth = async (mode: 'login' | 'signup') => {
@@ -173,38 +183,135 @@ function AccountSection() {
       ? await window.purroxy.account.signup(email, password)
       : await window.purroxy.account.login(email, password)
     if (result.error) { setError(result.error) }
-    else { setShowAuth(null); setEmail(''); setPassword(''); window.purroxy.account.getStatus().then(setStatus) }
+    else { setShowAuth(null); setEmail(''); setPassword(''); refreshStatus() }
     setLoading(false)
   }
 
   const handleLogout = async () => {
     await window.purroxy.account.logout()
-    window.purroxy.account.getStatus().then(setStatus)
+    refreshStatus()
+  }
+
+  const handleSubscribe = async () => {
+    setLoading(true)
+    const result = await window.purroxy.account.subscribe()
+    if (result.error) setError(result.error)
+    setLoading(false)
+  }
+
+  const handleManage = async () => {
+    const result = await window.purroxy.account.manageSubscription()
+    if (result.error) setError(result.error)
   }
 
   if (!status) return null
+
+  // Badge component
+  const Badge = ({ type }: { type: string }) => {
+    const styles: Record<string, string> = {
+      trial: 'bg-accent/10 text-accent border-accent/20',
+      subscribed: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/30',
+      contributor: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/30',
+      expired: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/30',
+      cancelled: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/30'
+    }
+    const labels: Record<string, string> = {
+      trial: `${status.trialDaysLeft}d trial`,
+      subscribed: 'Subscribed',
+      contributor: 'Contributor',
+      expired: 'Expired',
+      cancelled: 'Cancelled'
+    }
+    return (
+      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${styles[type] || ''}`}>
+        {labels[type] || type}
+      </span>
+    )
+  }
 
   return (
     <section className="mb-8">
       <label className="block text-sm font-medium mb-2">Account</label>
 
       {status.loggedIn ? (
-        <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{status.email}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {status.plan === 'trial' && status.trialDaysLeft !== null
-                  ? `Trial — ${status.trialDaysLeft} days left`
-                  : status.plan === 'monthly' ? 'Monthly subscription'
-                  : status.plan === 'contributor' ? 'Contributor access'
-                  : status.plan || 'Active'}
-              </p>
+        <div className="space-y-3">
+          <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium">{status.email}</p>
+                <Badge type={status.accountType} />
+              </div>
+              <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
+                Log out
+              </button>
             </div>
-            <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
-              Log out
-            </button>
+
+            {/* Trial progress bar */}
+            {status.accountType === 'trial' && status.trialDaysLeft !== null && (
+              <div className="mt-3">
+                <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                  <span>{status.trialDaysLeft} days remaining</span>
+                  <button onClick={handleSubscribe} disabled={loading} className="text-accent hover:text-accent-light font-medium">
+                    Subscribe now
+                  </button>
+                </div>
+                <div className="h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all"
+                    style={{ width: `${Math.max(5, ((14 - status.trialDaysLeft) / 14) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Subscribed — manage link */}
+            {status.accountType === 'subscribed' && (
+              <p className="text-xs text-gray-400 mt-2">
+                <button onClick={handleManage} className="text-accent hover:text-accent-light font-medium">
+                  Manage subscription
+                </button>
+              </p>
+            )}
+
+            {/* Contributor — thank you */}
+            {status.accountType === 'contributor' && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                Free forever. Thank you for sharing.
+              </p>
+            )}
+
+            {/* Expired — subscribe CTA */}
+            {status.accountType === 'expired' && (
+              <div className="mt-3">
+                <button onClick={handleSubscribe} disabled={loading}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors disabled:opacity-50">
+                  {loading ? 'Opening...' : 'Subscribe ($3.89/mo)'}
+                </button>
+                <p className="text-[10px] text-gray-400 text-center mt-1.5">
+                  Or share a capability to the community for free access
+                </p>
+              </div>
+            )}
+
+            {/* Cancelled — resubscribe CTA */}
+            {status.accountType === 'cancelled' && (
+              <div className="mt-3">
+                <button onClick={handleSubscribe} disabled={loading}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors disabled:opacity-50">
+                  {loading ? 'Opening...' : 'Resubscribe ($3.89/mo)'}
+                </button>
+              </div>
+            )}
+
+            {/* Email verification notice */}
+            {!status.emailVerified && (
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-2">
+                Check your email to verify your account.
+              </p>
+            )}
           </div>
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
       ) : showAuth ? (
         <div className="space-y-2 p-3 rounded-lg border border-accent/30 bg-accent/5">

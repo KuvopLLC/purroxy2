@@ -243,7 +243,17 @@ export default function Library() {
                                 </div>
 
                                 {testResult.result.error && (
-                                  <p className="text-red-700 dark:text-red-400 mb-2">{testResult.result.error}</p>
+                                  testResult.result.errorType === 'license' ? (
+                                    <div className="mb-2">
+                                      <p className="text-amber-700 dark:text-amber-400 mb-1.5">{testResult.result.error}</p>
+                                      <button onClick={() => window.purroxy.account.subscribe()}
+                                        className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors">
+                                        Subscribe ($3.89/mo)
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <p className="text-red-700 dark:text-red-400 mb-2">{testResult.result.error}</p>
+                                  )
                                 )}
 
                                 {Object.keys(testResult.result.data).length > 0 && (

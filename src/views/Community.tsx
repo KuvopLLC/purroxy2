@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, Download, Upload, Globe, Users, Loader2, CheckCircle } from 'lucide-react'
+import { Search, Download, Upload, Globe, Users, Loader2, CheckCircle, ExternalLink, Clock, XCircle } from 'lucide-react'
 
 interface CommunityCapability {
   id: string
@@ -11,6 +11,16 @@ interface CommunityCapability {
   createdAt: string
 }
 
+interface Submission {
+  id: string
+  capabilityName: string
+  hostname: string
+  status: string
+  githubPrUrl: string | null
+  rejectionReason: string | null
+  createdAt: string
+}
+
 export default function Community() {
   const [capabilities, setCapabilities] = useState<CommunityCapability[]>([])
   const [search, setSearch] = useState('')
@@ -19,28 +29,60 @@ export default function Community() {
   const [installing, setInstalling] = useState<string | null>(null)
   const [installed, setInstalled] = useState<Set<string>>(new Set())
 
+  // Publish state
+  const [showPublish, setShowPublish] = useState(false)
+  const [localCaps, setLocalCaps] = useState<CapabilityData[]>([])
+  const [selectedCapId, setSelectedCapId] = useState<string>('')
+  const [publishing, setPublishing] = useState(false)
+  const [publishResult, setPublishResult] = useState<{ success?: boolean; message?: string; prUrl?: string } | null>(null)
+
+  // Submissions
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+
   const loadCapabilities = async (query = '') => {
     setLoading(true); setError('')
     try {
       const status = await window.purroxy.account.getStatus()
       if (!status.loggedIn) {
-        setError('Log in to browse community capabilities (Settings → Account)')
+        setError('Log in to browse community capabilities (Settings > Account)')
         setLoading(false)
         return
       }
-      const apiUrl = (status as any).apiUrl || 'https://purroxy-api.your-domain.workers.dev'
+      const apiUrl = status.apiUrl || 'https://purroxy-api.mreider.workers.dev'
       const params = new URLSearchParams()
       if (query) params.set('q', query)
       const res = await fetch(`${apiUrl}/api/community?${params}`)
       const data = await res.json() as any
       setCapabilities(data.capabilities || [])
-    } catch (err: any) {
+    } catch {
       setError('Could not connect to community server. It may not be deployed yet.')
     }
     setLoading(false)
   }
 
-  useEffect(() => { loadCapabilities() }, [])
+  const loadSubmissions = async () => {
+    try {
+      const status = await window.purroxy.account.getStatus()
+      if (!status.loggedIn) return
+      const apiUrl = status.apiUrl
+      const accountStatus = await window.purroxy.account.getStatus()
+      const token = (accountStatus as any).token // Will use validate endpoint instead
+      const res = await fetch(`${apiUrl}/api/submissions`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json() as any
+        setSubmissions(data.submissions || [])
+      }
+    } catch {
+      // Submissions loading is best-effort
+    }
+  }
+
+  useEffect(() => {
+    loadCapabilities()
+    loadSubmissions()
+  }, [])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,7 +93,7 @@ export default function Community() {
     setInstalling(cap.id)
     try {
       const status = await window.purroxy.account.getStatus()
-      const apiUrl = (status as any).apiUrl || 'https://purroxy-api.your-domain.workers.dev'
+      const apiUrl = status.apiUrl || 'https://purroxy-api.mreider.workers.dev'
 
       const res = await fetch(`${apiUrl}/api/community/install`, {
         method: 'POST',
@@ -62,7 +104,6 @@ export default function Community() {
 
       if (data.error) { setError(data.error); return }
 
-      // Create local site profile and capability
       const site = await window.purroxy.sites.create(`https://${data.hostname}`, '', '')
       await window.purroxy.capabilities.create({
         siteProfileId: site.id,
@@ -81,16 +122,80 @@ export default function Community() {
     setInstalling(null)
   }
 
-  const handlePublish = async () => {
-    // Get capabilities to publish
+  const handleOpenPublish = async () => {
     const allCaps = await window.purroxy.capabilities.getAll()
     if (allCaps.length === 0) {
       setError('No capabilities to publish. Build one first!')
       return
     }
-    // For now, show a simple message. Full publish flow would let you pick which one.
-    setError('Publishing coming soon! For now, capabilities are shared via the community server.')
+    setLocalCaps(allCaps)
+    setSelectedCapId(allCaps[0].id)
+    setShowPublish(true)
+    setPublishResult(null)
   }
+
+  const handlePublish = async () => {
+    const cap = localCaps.find(c => c.id === selectedCapId)
+    if (!cap) return
+
+    setPublishing(true); setError('')
+    try {
+      const status = await window.purroxy.account.getStatus()
+      if (!status.loggedIn) {
+        setError('Log in to publish (Settings > Account)')
+        setPublishing(false)
+        return
+      }
+
+      const apiUrl = status.apiUrl
+      const validateResult = await window.purroxy.account.validate()
+      if (!validateResult.valid && !validateResult.offline) {
+        setError('Session expired. Please log in again.')
+        setPublishing(false)
+        return
+      }
+
+      // Get sites to find hostname
+      const sites = await window.purroxy.sites.getAll()
+      const site = sites.find(s => s.id === cap.siteProfileId)
+
+      const res = await fetch(`${apiUrl}/api/submissions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(status as any).token || ''}`
+        },
+        body: JSON.stringify({
+          name: cap.name,
+          description: cap.description,
+          hostname: site?.hostname || 'unknown',
+          actions: cap.actions,
+          parameters: cap.parameters,
+          extractionRules: cap.extractionRules,
+          viewport: (cap as any).viewport || null
+        })
+      })
+      const data = await res.json() as any
+
+      if (data.error) {
+        setError(data.error)
+      } else {
+        setPublishResult({
+          success: true,
+          message: data.message,
+          prUrl: data.githubPr?.url
+        })
+        // Refresh account status (may have been upgraded to contributor)
+        await window.purroxy.account.refresh()
+        loadSubmissions()
+      }
+    } catch (err: any) {
+      setError(`Publish failed: ${err.message}`)
+    }
+    setPublishing(false)
+  }
+
+  const selectedCap = localCaps.find(c => c.id === selectedCapId)
 
   return (
     <div className="p-8 max-w-2xl">
@@ -101,11 +206,79 @@ export default function Community() {
             Discover and install capabilities built by others
           </p>
         </div>
-        <button onClick={handlePublish}
+        <button onClick={handleOpenPublish}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors">
           <Upload size={14} /> Publish
         </button>
       </div>
+
+      {/* Publish panel */}
+      {showPublish && (
+        <div className="mb-6 p-4 rounded-lg border border-accent/30 bg-accent/5">
+          {publishResult?.success ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-green-700 dark:text-green-300">Submitted for review!</p>
+              <p className="text-xs text-gray-600 dark:text-gray-300">{publishResult.message}</p>
+              {publishResult.prUrl && (
+                <a href={publishResult.prUrl} target="_blank" rel="noopener"
+                  className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-light font-medium">
+                  <ExternalLink size={12} /> View PR on GitHub
+                </a>
+              )}
+              <button onClick={() => { setShowPublish(false); setPublishResult(null) }}
+                className="block text-xs text-gray-400 hover:text-gray-600 mt-2">Close</button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Choose a capability to share</label>
+                <select value={selectedCapId} onChange={e => setSelectedCapId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+                  {localCaps.map(cap => (
+                    <option key={cap.id} value={cap.id}>{cap.name}</option>
+                  ))}
+                </select>
+              </div>
+              {selectedCap && (
+                <p className="text-xs text-gray-500">{selectedCap.description || 'No description'}</p>
+              )}
+              <p className="text-[10px] text-gray-400">
+                Publishing shares your capability with the community and creates a review PR. When approved, you get free Purroxy access forever.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowPublish(false)} className="px-3 py-1.5 rounded-lg text-xs text-gray-500">Cancel</button>
+                <button onClick={handlePublish} disabled={publishing}
+                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-light disabled:opacity-50">
+                  {publishing ? 'Submitting...' : 'Publish'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Submissions history */}
+      {submissions.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-medium text-gray-500 mb-2">Your submissions</h3>
+          <div className="space-y-1">
+            {submissions.map(sub => (
+              <div key={sub.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/5 dark:bg-white/5 text-xs">
+                {sub.status === 'pending' && <Clock size={12} className="text-amber-500" />}
+                {sub.status === 'approved' && <CheckCircle size={12} className="text-green-500" />}
+                {sub.status === 'rejected' && <XCircle size={12} className="text-red-500" />}
+                <span className="font-medium flex-1">{sub.capabilityName}</span>
+                <span className="text-gray-400">{sub.hostname}</span>
+                {sub.githubPrUrl && (
+                  <a href={sub.githubPrUrl} target="_blank" rel="noopener" className="text-accent hover:text-accent-light">
+                    <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <form onSubmit={handleSearch} className="mb-6">

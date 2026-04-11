@@ -87,7 +87,11 @@ contextBridge.exposeInMainWorld('purroxy', {
     signup: (email: string, password: string) => ipcRenderer.invoke('account:signup', email, password),
     login: (email: string, password: string) => ipcRenderer.invoke('account:login', email, password),
     logout: () => ipcRenderer.invoke('account:logout'),
-    validate: () => ipcRenderer.invoke('account:validate')
+    validate: () => ipcRenderer.invoke('account:validate'),
+    subscribe: () => ipcRenderer.invoke('account:subscribe'),
+    manageSubscription: () => ipcRenderer.invoke('account:manageSubscription'),
+    canUse: () => ipcRenderer.invoke('account:canUse'),
+    refresh: () => ipcRenderer.invoke('account:refresh')
   },
   lock: {
     getConfig: () => ipcRenderer.invoke('lock:getConfig'),

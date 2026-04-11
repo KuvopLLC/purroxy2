@@ -70,6 +70,17 @@ export function startMCPApi(): number {
             return
           }
 
+          // Block execution when license is invalid
+          const { isLicenseValid } = require('./account')
+          if (!isLicenseValid()) {
+            res.writeHead(402)
+            res.end(JSON.stringify({
+              error: 'subscription_required',
+              message: 'Your free trial has ended. Subscribe or share a capability for free access.'
+            }))
+            return
+          }
+
           const { capabilityId, params: paramValues = {} } = JSON.parse(body || '{}')
 
           const cap = getCapability(capabilityId)

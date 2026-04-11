@@ -1,16 +1,62 @@
 {
   "name": "purroxy",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Record what you do on any website. Securely automate it forever.",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "package": "npm run build && electron-builder"
   },
-  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mreider/purroxy2"
+  },
+  "author": "mreider",
   "license": "MIT",
+  "build": {
+    "appId": "com.purroxy.app",
+    "productName": "Purroxy",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "resources/**/*",
+      "build/**/*",
+      "mcp-server.mjs",
+      "node_modules/@modelcontextprotocol/**/*"
+    ],
+    "asarUnpack": [
+      "mcp-server.mjs",
+      "node_modules/@modelcontextprotocol/**/*"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
+    "win": {
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Utility"
+    },
+    "protocols": [
+      {
+        "name": "Purroxy",
+        "schemes": ["purroxy"]
+      }
+    ]
+  },
   "devDependencies": {
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",

@@ -3,10 +3,22 @@ import { getCapability, updateCapability } from './capabilities'
 import { getSite, getSession } from './sites'
 import { PlaywrightEngine } from '../core/browser/playwright-engine'
 import type { ExecutionResult } from '../core/browser/types'
+import { isLicenseValid } from './account'
 
 export function setupExecutor(mainWindow: BrowserWindow) {
 
   ipcMain.handle('executor:test', async (_event, capabilityId: string, paramValues: Record<string, string> = {}, options: { visible?: boolean } = {}) => {
+    if (!isLicenseValid()) {
+      return {
+        success: false,
+        error: 'Your free trial has ended. Subscribe or share a capability for free access.',
+        errorType: 'license',
+        data: {},
+        durationMs: 0,
+        log: ['License check failed']
+      }
+    }
+
     const cap = getCapability(capabilityId)
     if (!cap) return { success: false, error: 'Capability not found', data: {}, durationMs: 0, log: [] }
 

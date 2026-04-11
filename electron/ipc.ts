@@ -87,8 +87,11 @@ export function setupIPC() {
     const path = require('path')
 
     // Get absolute path to mcp-server.mjs
+    // In packaged app, asarUnpack puts it at app.asar.unpacked/mcp-server.mjs
     const appPath = require('electron').app.getAppPath()
-    const mcpServerPath = path.resolve(appPath, 'mcp-server.mjs')
+    const mcpServerPath = appPath.includes('.asar')
+      ? path.resolve(appPath.replace('.asar', '.asar.unpacked'), 'mcp-server.mjs')
+      : path.resolve(appPath, 'mcp-server.mjs')
 
     // Read existing config or create new
     let config: any = {}

@@ -4,15 +4,27 @@ compatibility_date = "2024-01-01"
 
 [vars]
 TRIAL_DAYS = "14"
+APP_URL = "https://purroxy.com"
+GITHUB_REPO = "mreider/purroxy2"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "purroxy-db"
-database_id = "TODO_REPLACE_WITH_DATABASE_ID"
+database_id = "a57178fb-7789-4805-b86f-9b9e45c6793f"
 
-# Uncomment when deploying:
-# [env.production]
-# vars = { STRIPE_WEBHOOK_SECRET = "whsec_..." }
-# [env.production.secrets]
-# STRIPE_SECRET_KEY = "sk_live_..."
-# JWT_SECRET = "your-jwt-secret"
+[[kv_namespaces]]
+binding = "KV"
+id = "4650174727f146ecafb581b76621975d"
+
+# Secrets (set via `wrangler secret put`):
+# JWT_SECRET
+# RESEND_API_KEY
+# STRIPE_SECRET_KEY
+# STRIPE_WEBHOOK_SECRET
+# STRIPE_PRICE_ID
+# GITHUB_TOKEN
+# GITHUB_WEBHOOK_SECRET
+
+[env.production.vars]
+APP_URL = "https://purroxy.com"
+GITHUB_REPO = "mreider/purroxy2"
