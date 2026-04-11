@@ -46,6 +46,7 @@ export interface RecordedAction {
   value?: string
   url?: string
   sensitive?: boolean
+  intent?: string // AI-generated: what this step is trying to accomplish
 }
 
 export interface Parameter {

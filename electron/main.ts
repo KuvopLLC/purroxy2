@@ -10,6 +10,7 @@ import { startMCPApi } from './mcp-api'
 import { setupVault } from './vault'
 import { setupAppLock } from './app-lock'
 import { setupAccount } from './account'
+import { setupHealer } from './healer'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -75,6 +76,7 @@ app.whenReady().then(() => {
   setupVault()
   setupAppLock(mainWindow!)
   setupAccount()
+  setupHealer()
   startMCPApi()
   setupTray(mainWindow!)
 

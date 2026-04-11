@@ -4,6 +4,8 @@ import { getSite, getSession } from './sites'
 import { PlaywrightEngine } from '../core/browser/playwright-engine'
 import type { ExecutionResult } from '../core/browser/types'
 import { isLicenseValid } from './account'
+import { healSelector } from './healer'
+import { store } from './store'
 
 export function setupExecutor(mainWindow: BrowserWindow) {
 
@@ -35,6 +37,15 @@ export function setupExecutor(mainWindow: BrowserWindow) {
     }
 
     const engine = new PlaywrightEngine()
+
+    // Wire AI-based self-healing for broken selectors
+    const apiKey = store.get('aiApiKey')
+    if (apiKey) {
+      engine.setHealer(async (context) => {
+        const result = await healSelector(apiKey, context)
+        return result
+      })
+    }
 
     try {
       mainWindow.webContents.send('executor:status', { capabilityId, status: 'running' })
@@ -82,6 +93,24 @@ export function setupExecutor(mainWindow: BrowserWindow) {
         `[session] Decrypted cookies: ${session?.cookies?.length || 0}`,
         `[session] Decrypted localStorage: ${Object.keys(session?.localStorage || {}).length} keys`
       )
+
+      // Persist AI-healed locators back into the capability for fast path next run
+      const healed = engine.getHealedLocators()
+      if (healed.length > 0) {
+        const updatedActions = [...(cap.actions as any[])]
+        for (const h of healed) {
+          const idx = h.actionIndex
+          if (idx >= 0 && updatedActions[idx]) {
+            const existing = updatedActions[idx].locators || []
+            updatedActions[idx] = {
+              ...updatedActions[idx],
+              locators: [h.locator, ...existing] // Healed locator first = fast path
+            }
+          }
+        }
+        updateCapability(capabilityId, { actions: updatedActions } as any)
+        result.log.push(`[heal] Persisted ${healed.length} healed locator(s) for future runs`)
+      }
 
       // Redact sensitive fields
       if (result.success && result.data) {

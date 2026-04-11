@@ -41,6 +41,7 @@ interface RecordedAction {
   value?: string
   url?: string
   sensitive?: boolean
+  intent?: string
 }
 
 interface CapabilityParameter {
@@ -109,7 +110,7 @@ interface PurroxyAPI {
     chat: (messages: Array<{ role: string; content: string }>, pageContext?: string) =>
       Promise<{ content?: string; error?: string; usage?: { input: number; output: number } }>
     generateCapability: (actions: unknown[], chatHistory: Array<{ role: string; content: string }>) =>
-      Promise<{ capability?: { name: string; description: string; parameters: CapabilityParameter[]; extractionRules: CapabilityExtractionRule[] }; error?: string }>
+      Promise<{ capability?: { name: string; description: string; parameters: CapabilityParameter[]; extractionRules: CapabilityExtractionRule[]; intents?: string[] }; error?: string }>
   }
   recorder: {
     start: () => Promise<boolean>

@@ -140,6 +140,7 @@ Analyze the recorded actions to:
 2. Write a one-sentence description
 3. Identify which action values should be PARAMETERS (things that change each run — like search queries, dates, property names) vs FIXED (navigation steps that are always the same)
 4. Propose EXTRACTION RULES for data visible on the final page that the user would want returned
+5. For EACH action (by index), write a short INTENT string (5-15 words) describing the user's goal for that step. Examples: "Click Search to submit query", "Type check-in date into date picker", "Navigate to reservations page". Output these as an "intents" array where intents[i] is the intent for actions[i].
 
 Rules for parameters:
 - Navigation clicks are almost always fixed (not parameters)
@@ -175,6 +176,11 @@ Output ONLY valid JSON in this exact format, no other text:
       "multiple": false,
       "sensitive": false
     }
+  ],
+  "intents": [
+    "Navigate to site homepage",
+    "Click the login link",
+    "Type username into email field"
   ]
 }`
 

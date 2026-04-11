@@ -230,11 +230,17 @@ export default function Builder() {
     // Save the viewport size so replay uses the same dimensions
     const viewport = await window.purroxy.browser.getViewportSize()
 
+    // Merge AI-generated intents into each action for self-healing
+    const annotatedActions = actionsRef.current.map((action: any, i: number) => ({
+      ...action,
+      intent: cap.intents?.[i] || undefined
+    }))
+
     const saved = await window.purroxy.capabilities.create({
       siteProfileId: site.id,
       name: cap.name,
       description: cap.description,
-      actions: actionsRef.current,
+      actions: annotatedActions,
       parameters: cap.parameters,
       extractionRules: cap.extractionRules,
       viewport

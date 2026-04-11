@@ -1,11 +1,32 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright'
-import type { BrowserEngineOptions, ExecutionResult, ExtractedData, ExtractionRule, RecordedAction, Parameter } from './types'
+import type { BrowserEngineOptions, ExecutionResult, ExtractedData, ExtractionRule, RecordedAction, Parameter, Locator } from './types'
+
+export type HealerFn = (context: {
+  intent: string
+  label: string
+  tagName: string
+  originalLocators: Array<{ strategy: string; value: string }>
+  domSnapshot: string
+  actionType: string
+  pageUrl: string
+}) => Promise<{ selector: string | null; confidence: string } | null>
+
+const MAX_HEALS_PER_RUN = 3
 
 export class PlaywrightEngine {
   private browser: Browser | null = null
   private context: BrowserContext | null = null
   private page: Page | null = null
   private log: string[] = []
+  private healer: HealerFn | null = null
+  private healCount = 0
+  private _healedLocators: Array<{ actionIndex: number; locator: Locator }> = []
+
+  setHealer(fn: HealerFn) { this.healer = fn }
+
+  getHealedLocators(): Array<{ actionIndex: number; locator: Locator }> {
+    return this._healedLocators
+  }
 
   private addLog(msg: string) {
     const ts = new Date().toISOString().slice(11, 23)
@@ -14,6 +35,8 @@ export class PlaywrightEngine {
 
   async launch(options: BrowserEngineOptions = {}): Promise<void> {
     this.log = []
+    this.healCount = 0
+    this._healedLocators = []
     this.addLog('Launching browser...')
 
     this.browser = await chromium.launch({
@@ -90,7 +113,7 @@ export class PlaywrightEngine {
         this.addLog(`Step ${i + 1}/${optimized.length}: ${action.type} ${action.selector || action.url || ''} ${action.label ? '(' + action.label + ')' : ''}`.trim())
 
         try {
-          await this.executeAction(action)
+          await this.executeAction(action, i)
           this.addLog(`  -> OK`)
         } catch (err: any) {
           failedSteps++
@@ -248,7 +271,7 @@ export class PlaywrightEngine {
     return result
   }
 
-  private async executeAction(action: RecordedAction): Promise<void> {
+  private async executeAction(action: RecordedAction, actionIndex = -1): Promise<void> {
     if (!this.page) return
 
     // Inject pending localStorage on first navigation
@@ -278,7 +301,7 @@ export class PlaywrightEngine {
 
       case 'click':
         if (action.selector || (action as any).locators?.length) {
-          await this.smartClick(action)
+          await this.smartClick(action, actionIndex)
           await this.page.waitForTimeout(500)
         }
         break
@@ -292,10 +315,18 @@ export class PlaywrightEngine {
             // Fallback: try by label/placeholder
             if (action.label) {
               this.addLog(`  Selector failed for type, trying by label...`)
-              await this.page.getByLabel(action.label, { exact: false }).first().fill(action.value, { timeout: 1500 })
-              this.addLog(`  Found input by label "${action.label}"`)
+              try {
+                await this.page.getByLabel(action.label, { exact: false }).first().fill(action.value, { timeout: 1500 })
+                this.addLog(`  Found input by label "${action.label}"`)
+              } catch {
+                // Label also failed — try AI healing
+                const healed = await this.tryHeal(action, actionIndex, [{ strategy: 'css', value: action.selector }])
+                if (!healed) throw new Error(`Could not find input: ${action.selector}`)
+              }
             } else {
-              throw new Error(`Could not find input: ${action.selector}`)
+              // No label — try AI healing directly
+              const healed = await this.tryHeal(action, actionIndex, [{ strategy: 'css', value: action.selector }])
+              if (!healed) throw new Error(`Could not find input: ${action.selector}`)
             }
           }
         }
@@ -335,7 +366,101 @@ export class PlaywrightEngine {
     }
   }
 
-  private async smartClick(action: RecordedAction): Promise<void> {
+  private async getCompactDOM(): Promise<string> {
+    if (!this.page) return ''
+    try {
+      return await this.page.evaluate(() => {
+        function ser(el: Element, depth: number): string {
+          if (depth > 8) return ''
+          const tag = el.tagName.toLowerCase()
+          if (['script','style','svg','noscript','link','meta','head'].includes(tag)) return ''
+          const style = getComputedStyle(el)
+          if (style.display === 'none' || style.visibility === 'hidden') return ''
+
+          const attrs: string[] = []
+          for (const a of ['id','role','aria-label','name','placeholder','data-testid','type','href']) {
+            const v = el.getAttribute(a)
+            if (v) attrs.push(`${a}="${v.slice(0,60)}"`)
+          }
+          const cls = el.className
+          if (typeof cls === 'string' && cls) attrs.push(`class="${cls.split(/\s+/).slice(0,3).join(' ')}"`)
+
+          const text = Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3)
+            .map(n => (n.textContent || '').trim())
+            .join(' ').trim().slice(0, 60)
+
+          const children = Array.from(el.children)
+            .map(c => ser(c, depth + 1))
+            .filter(Boolean).join('')
+
+          const textPart = text ? ` "${text}"` : ''
+          const attrPart = attrs.length ? ' ' + attrs.join(' ') : ''
+          return `<${tag}${attrPart}${textPart}>${children}</${tag}>`
+        }
+        return ser(document.body, 0).slice(0, 4000)
+      })
+    } catch {
+      return ''
+    }
+  }
+
+  private async tryHeal(action: RecordedAction, actionIndex: number, locators: Array<{ strategy: string; value: string }>): Promise<boolean> {
+    if (!this.healer || !this.page) return false
+    if (this.healCount >= MAX_HEALS_PER_RUN) {
+      this.addLog(`  Max heals reached (${MAX_HEALS_PER_RUN}), skipping AI repair`)
+      return false
+    }
+    if (!action.intent && !action.label) return false
+
+    this.addLog(`  All locators failed. Attempting AI healing...`)
+    this.healCount++
+
+    const domSnapshot = await this.getCompactDOM()
+    const pageUrl = this.page.url()
+
+    const result = await this.healer({
+      intent: action.intent || `${action.type} on "${action.label}"`,
+      label: action.label || '',
+      tagName: action.tagName || '*',
+      originalLocators: locators,
+      domSnapshot,
+      actionType: action.type,
+      pageUrl
+    })
+
+    if (!result?.selector || result.confidence === 'none') {
+      this.addLog(`  AI could not find element`)
+      return false
+    }
+
+    this.addLog(`  AI suggests: ${result.selector} (${result.confidence})`)
+
+    try {
+      await this.page.waitForSelector(result.selector, { state: 'visible', timeout: 3000 })
+
+      if (action.type === 'click') {
+        await this.page.click(result.selector)
+      } else if (action.type === 'type' && action.value) {
+        await this.page.fill(result.selector, action.value)
+      }
+
+      this.addLog(`  AI-healed ${action.type} succeeded!`)
+
+      // Store for cache-back
+      this._healedLocators.push({
+        actionIndex,
+        locator: { strategy: 'css', value: result.selector }
+      })
+
+      return true
+    } catch (err: any) {
+      this.addLog(`  AI-suggested selector also failed: ${err.message}`)
+      return false
+    }
+  }
+
+  private async smartClick(action: RecordedAction, actionIndex = -1): Promise<void> {
     if (!this.page) return
 
     const locators: Array<{ strategy: string; value: string; name?: string; attr?: string; tag?: string }> =
@@ -425,6 +550,11 @@ export class PlaywrightEngine {
         } catch {}
       }
     }
+
+    // Try AI healing before giving up
+    const allLocators = locators.length > 0 ? locators : (action.selector ? [{ strategy: 'css', value: action.selector }] : [])
+    const healed = await this.tryHeal(action, actionIndex, allLocators)
+    if (healed) return
 
     const tried = locators.length > 0 ? locators.map(l => l.strategy).join(', ') : 'css, role, text, aria, has-text'
     throw new Error(`Could not find element (tried: ${tried}): ${action.selector || 'no selector'}${action.label ? ` label="${action.label}"` : ''}`)

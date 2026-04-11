@@ -4,6 +4,8 @@ import { getAllSites, getSite, getSession } from './sites'
 import { getAllDecryptedValues } from './vault'
 import { isLocked } from './app-lock'
 import { PlaywrightEngine } from '../core/browser/playwright-engine'
+import { healSelector } from './healer'
+import { store } from './store'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
@@ -100,6 +102,15 @@ export function startMCPApi(): number {
           const session = getSession(cap.siteProfileId)
           const engine = new PlaywrightEngine()
 
+          // Wire AI-based self-healing
+          const apiKey = store.get('aiApiKey')
+          if (apiKey) {
+            engine.setHealer(async (context) => {
+              const result = await healSelector(apiKey, context)
+              return result
+            })
+          }
+
           try {
             await engine.launch({
               headless: true,
@@ -122,6 +133,24 @@ export function startMCPApi(): number {
             }
 
             const result = await engine.execute(actions, params, paramValues, cap.extractionRules as any)
+
+            // Persist AI-healed locators back into the capability
+            const healed = engine.getHealedLocators()
+            if (healed.length > 0) {
+              const { updateCapability } = require('./capabilities')
+              const updatedActions = [...(cap.actions as any[])]
+              for (const h of healed) {
+                const idx = h.actionIndex
+                if (idx >= 0 && updatedActions[idx]) {
+                  const existing = updatedActions[idx].locators || []
+                  updatedActions[idx] = {
+                    ...updatedActions[idx],
+                    locators: [h.locator, ...existing]
+                  }
+                }
+              }
+              updateCapability(capabilityId, { actions: updatedActions } as any)
+            }
 
             // Redact sensitive extraction fields
             if (result.data) {
