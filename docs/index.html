@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Purroxy — Give Claude secure access to your accounts</title>
+  <meta name="description" content="Record what you do on any website. Securely automate it forever.">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #ffffff; --bg-alt: #f8f9fb; --text: #1a1a2e; --text-muted: #6b7280;
+      --text-faint: #9ca3af; --accent: #6366f1; --accent-hover: #4f46e5;
+      --success: #16a34a; --success-bg: rgba(22,163,74,0.08); --success-border: rgba(22,163,74,0.2);
+      --border: #e5e7eb; --card-bg: #ffffff; --code-bg: #1e1e2e; --code-text: #cdd6f4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1117; --bg-alt: #1a1b26; --text: #e2e8f0; --text-muted: #94a3b8;
+        --text-faint: #64748b; --border: #2d2d3d; --card-bg: #1a1b26;
+        --code-bg: #12121a; --code-text: #a6adc8;
+        --success-bg: rgba(22,163,74,0.12); --success-border: rgba(22,163,74,0.25);
+      }
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; line-height: 1.6; }
+    a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+
+    /* Nav */
+    nav { max-width: 960px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .nav-brand { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; color: var(--text); text-decoration: none; }
+    .nav-brand img { width: 20px; height: 20px; border-radius: 4px; }
+    .nav-links { display: flex; gap: 20px; font-size: 14px; }
+    .nav-links a { color: var(--text-muted); text-decoration: none; } .nav-links a:hover { color: var(--text); }
+
+    /* Hero */
+    .hero { max-width: 720px; margin: 0 auto; padding: 60px 24px 80px; text-align: center; }
+    .hero img { width: 96px; height: 96px; border-radius: 20px; margin-bottom: 32px; }
+    .hero h1 { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 16px; }
+    .hero p { color: var(--text-muted); font-size: 18px; max-width: 540px; margin: 0 auto 24px; }
+    .btn { display: inline-block; padding: 12px 28px; border-radius: 10px; font-weight: 600; font-size: 15px; cursor: pointer; border: none; text-decoration: none; transition: background 0.15s; }
+    .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); text-decoration: none; }
+    .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); } .btn-ghost:hover { background: var(--bg-alt); text-decoration: none; }
+    .hero-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .hero-meta { margin-top: 8px; font-size: 12px; color: var(--text-faint); }
+
+    /* Sections */
+    section { padding: 64px 24px; }
+    .alt-bg { background: var(--bg-alt); }
+    .container { max-width: 960px; margin: 0 auto; }
+    h2 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 12px; }
+    .subtitle { text-align: center; color: var(--text-muted); font-size: 14px; max-width: 560px; margin: 0 auto 32px; }
+
+    /* Grid */
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 768px) { .grid-3 { grid-template-columns: 1fr; gap: 24px; } .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+    .step { text-align: center; }
+    .step-num { font-size: 28px; font-weight: 700; margin-bottom: 12px; color: var(--text-faint); }
+    .step h3 { font-weight: 600; margin-bottom: 8px; font-size: 15px; }
+    .step p { font-size: 13px; color: var(--text-muted); }
+
+    /* Cards */
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+    .card h3 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .card p { font-size: 12px; color: var(--text-muted); }
+
+    /* Code block */
+    .code-block { background: var(--code-bg); color: var(--code-text); border-radius: 12px; padding: 20px 24px; max-width: 480px; margin: 0 auto; text-align: left; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.7; overflow-x: auto; }
+    .code-comment { color: var(--text-faint); }
+
+    /* Quote */
+    .quote { max-width: 480px; margin: 40px auto 0; text-align: center; }
+    .quote blockquote { font-size: 14px; color: var(--text-muted); font-style: italic; line-height: 1.6; }
+    .quote cite { display: block; font-size: 12px; color: var(--text-faint); margin-top: 12px; font-style: normal; }
+
+    /* Pricing */
+    .pricing-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 40px; text-align: center; max-width: 480px; margin: 0 auto; }
+    .price { font-size: 40px; font-weight: 700; } .price span { font-size: 16px; font-weight: 400; color: var(--text-faint); }
+    .pricing-card .subtitle { margin-bottom: 20px; }
+    .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; font-size: 12px; color: var(--text-faint); }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .contributor-box { background: var(--success-bg); border: 1px solid var(--success-border); border-radius: 10px; padding: 16px; margin-top: 4px; }
+    .contributor-box p:first-child { font-size: 14px; font-weight: 500; color: var(--success); }
+    .contributor-box p:last-child { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border); padding: 24px; }
+    .footer-inner { max-width: 960px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
+    .footer-brand { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-faint); }
+    .footer-brand img { width: 20px; height: 20px; border-radius: 4px; }
+    .footer-links { display: flex; gap: 16px; font-size: 14px; }
+    .footer-links a { color: var(--text-faint); } .footer-links a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-brand"><img src="/icon-192.png" alt="Purroxy"> Purroxy</a>
+  <div class="nav-links">
+    <a href="#download">Download</a>
+    <a href="#pricing">Pricing</a>
+    <a href="https://github.com/mreider/purroxy2">GitHub</a>
+  </div>
+</nav>
+
+<div class="hero" id="download">
+  <img src="/icon-192.png" alt="Purroxy">
+  <h1>Give Claude secure access<br>to your accounts.</h1>
+  <p>Purroxy lets Claude act on websites that require your login: email, banking, insurance, domains. Your credentials never leave your machine.</p>
+  <div class="hero-buttons">
+    <a href="https://github.com/mreider/purroxy2/releases/latest" class="btn btn-primary">Download</a>
+    <a href="https://github.com/mreider/purroxy2" class="btn btn-ghost">View Source</a>
+  </div>
+  <p class="hero-meta">macOS &middot; Windows &middot; Linux</p>
+</div>
+
+<section class="alt-bg">
+  <div class="container">
+    <h2>How It Works</h2>
+    <div class="grid-3" style="margin-top:32px;">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Log in once, securely</h3>
+        <p>Enter a URL: your email, bank, insurance portal. You log in through a secure embedded browser. Credentials never touch any AI.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Record what you want done</h3>
+        <p>Walk through the site with Purroxy. Every click, search, and navigation is recorded. Purroxy turns it into a reusable capability with parameters you can change each time.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Ask Claude, it acts as you</h3>
+        <p>Claude replays the recorded steps with your saved session, fills in search terms and filters, and extracts the results. Your password is never stored or shared.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Security is architecture, not policy</h2>
+    <p class="subtitle">Other tools tell their AI "don't leak the password." Purroxy removes the password from the data before the AI ever sees it. Inputs and outputs are both protected. The difference matters.</p>
+    <div class="grid-4">
+      <div class="card">
+        <h3>Zero-knowledge login</h3>
+        <p>You log in through the real website. Purroxy never sees your password, only the session cookies.</p>
+      </div>
+      <div class="card">
+        <h3>Encrypted vault</h3>
+        <p>Credit cards, account numbers, and other sensitive data stored in your OS keychain. Typed into forms by Purroxy, never sent to Claude.</p>
+      </div>
+      <div class="card">
+        <h3>Data scrubbing</h3>
+        <p>Vault values are removed from page content before Claude sees it. Not filtered by a prompt. Absent from the API call entirely.</p>
+      </div>
+      <div class="card">
+        <h3>Local extraction</h3>
+        <p>At runtime, data is extracted directly from the page on your machine. No page content is sent to any AI. Sensitive results are redacted.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt-bg">
+  <div class="container" style="text-align:center;">
+    <h2>Automate your accounts with complete safety</h2>
+    <p class="subtitle">Purroxy securely bridges your logged-in sessions to Claude Desktop. Your credentials never touch any AI. They stay encrypted on your machine.</p>
+    <div class="code-block">
+      <div class="code-comment">// Claude searches your email for you</div>
+      <div>{</div>
+      <div>&nbsp; "tool": "yahoo_mail__search_emails",</div>
+      <div>&nbsp; "inputs": {</div>
+      <div>&nbsp;&nbsp;&nbsp; "search_term": "tax documents"</div>
+      <div>&nbsp; }</div>
+      <div>}</div>
+    </div>
+    <div class="quote">
+      <blockquote>&ldquo;I was doing 30-40 DMV lookups a day by hand, copy-pasting plate numbers one at a time. Now my AI agent handles it. I just review the results.&rdquo;</blockquote>
+      <cite>Paul Garrity, Underwriter &middot; Garrity Insurance, Canton OH</cite>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="container">
+    <h2>Pricing</h2>
+    <div class="pricing-card">
+      <p class="price">$3.89<span> / month</span></p>
+      <p class="subtitle">14-day free trial. Everything included. Cancel anytime.</p>
+      <a href="https://github.com/mreider/purroxy2/releases/latest" class="btn btn-primary">Download Free</a>
+      <div class="divider">or</div>
+      <div class="contributor-box">
+        <p>Contribute a capability, use Purroxy free forever</p>
+        <p>Build a capability for the community library. Once approved, your subscription stops and you keep full access permanently.</p>
+      </div>
+    </div>
+    <p style="text-align:center; font-size:12px; color:var(--text-faint); margin-top:24px;">All plans include OS keychain encryption, zero-knowledge credential handling, and full security guarantees.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand"><img src="/icon-192.png" alt="Purroxy"> Purroxy</div>
+    <div class="footer-links">
+      <a href="https://github.com/mreider/purroxy2">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
