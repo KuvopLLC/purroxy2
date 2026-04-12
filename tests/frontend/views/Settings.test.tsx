@@ -22,7 +22,6 @@ vi.mock('lucide-react', () => {
     EyeOff: icon('EyeOff'),
     Check: icon('Check'),
     CheckCircle: icon('CheckCircle'),
-    XCircle: icon('XCircle'),
     Loader2: icon('Loader2'),
     Link2: icon('Link2'),
     Unlink: icon('Unlink'),
@@ -217,7 +216,7 @@ describe('Settings view', () => {
       })
     })
 
-    it('shows Disable button when lock is enabled', async () => {
+    it('shows Disable button when lock is enabled and reveals PIN input on click', async () => {
       const api = getPurroxyMock()
       api.account.getStatus.mockResolvedValue(buildAccountStatus())
       api.claude.getStatus.mockResolvedValue({ installed: false, connected: false })
@@ -232,6 +231,14 @@ describe('Settings view', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Disable')).toBeInTheDocument()
+      })
+
+      // PIN input is hidden until Disable is clicked
+      expect(screen.queryByPlaceholderText('Enter PIN to disable')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByText('Disable'))
+
+      await waitFor(() => {
         expect(screen.getByPlaceholderText('Enter PIN to disable')).toBeInTheDocument()
       })
     })

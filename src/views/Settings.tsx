@@ -1,50 +1,41 @@
-import { useEffect, useState } from 'react'
-import { Eye, EyeOff, Check, CheckCircle, XCircle, Loader2, Link2, Unlink, Lock } from 'lucide-react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Eye, EyeOff, Check, CheckCircle, Loader2, Link2, Unlink, Lock } from 'lucide-react'
 import { useSettings } from '../stores/settings'
+
+function SectionCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="rounded-xl border border-black/5 dark:border-white/10 overflow-hidden">
+      <div className="px-5 py-3.5 bg-black/[0.02] dark:bg-white/[0.03]">
+        <h3 className="text-sm font-medium">{title}</h3>
+        {description && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{description}</p>}
+      </div>
+      <div className="px-5 py-4 border-t border-black/5 dark:border-white/5">
+        {children}
+      </div>
+    </section>
+  )
+}
 
 export default function Settings() {
   const { aiApiKey, loaded, load, setAiApiKey } = useSettings()
-
   const [keyInput, setKeyInput] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  // Claude Desktop status
-  const [claudeStatus, setClaudeStatus] = useState<{ installed: boolean; connected: boolean; configPath?: string } | null>(null)
-  const [connecting, setConnecting] = useState(false)
-
   useEffect(() => {
     if (!loaded) load()
-    checkClaudeStatus()
   }, [loaded, load])
 
   useEffect(() => {
     if (loaded) setKeyInput(aiApiKey)
   }, [loaded, aiApiKey])
 
-  const checkClaudeStatus = async () => {
-    const status = await window.purroxy.claude.getStatus()
-    setClaudeStatus(status)
-  }
-
-  const handleSaveKey = async () => {
+  const handleSaveKey = async (e?: FormEvent) => {
+    e?.preventDefault()
+    if (keyInput.trim() === aiApiKey) return
     await setAiApiKey(keyInput.trim())
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
-  }
-
-  const handleConnect = async () => {
-    setConnecting(true)
-    const result = await window.purroxy.claude.connect()
-    if (result.success) {
-      await checkClaudeStatus()
-    }
-    setConnecting(false)
-  }
-
-  const handleDisconnect = async () => {
-    await window.purroxy.claude.disconnect()
-    await checkClaudeStatus()
   }
 
   if (!loaded) return null
@@ -53,103 +44,48 @@ export default function Settings() {
     <div className="p-8 max-w-xl">
       <h2 className="text-xl font-semibold mb-6">Settings</h2>
 
-      {/* Account */}
-      <AccountSection />
+      <div className="space-y-5">
+        <AccountSection />
+        <ClaudeDesktopSection />
+        <LockSection />
 
-      {/* Claude Desktop Integration */}
-      <section className="mb-8">
-        <label className="block text-sm font-medium mb-2">Claude Desktop</label>
-
-        {claudeStatus === null ? (
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <Loader2 size={14} className="animate-spin" /> Checking...
-          </div>
-        ) : !claudeStatus.installed ? (
-          <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">Claude Desktop is not installed.</p>
-            <a href="https://claude.ai/download" target="_blank" className="text-sm text-accent hover:text-accent-light font-medium">
-              Download Claude Desktop
-            </a>
-          </div>
-        ) : claudeStatus.connected ? (
-          <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
-                <span className="text-sm font-medium text-green-800 dark:text-green-300">Connected</span>
-              </div>
-              <button onClick={handleDisconnect} className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors">
-                <Unlink size={12} /> Disconnect
+        <SectionCard title="Anthropic API Key" description="Used for the AI guide when building capabilities. Stored locally.">
+          <form onSubmit={handleSaveKey} className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                placeholder="sk-ant-..."
+                className="w-full px-3 py-2 pr-10 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <p className="text-xs text-green-700 dark:text-green-400/80 mt-1">
-              Your capabilities are available in Claude Desktop. Restart Claude Desktop if you just connected.
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
-              Connect Purroxy so Claude Desktop can run your capabilities.
-            </p>
-            <button onClick={handleConnect} disabled={connecting}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors disabled:opacity-60">
-              {connecting ? (
-                <><Loader2 size={14} className="animate-spin" /> Connecting...</>
-              ) : (
-                <><Link2 size={14} /> Connect to Claude Desktop</>
-              )}
-            </button>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-              Purroxy must be running for Claude to use your capabilities.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* App Lock */}
-      <LockSettings />
-
-      {/* API Key */}
-      <section className="mb-8">
-        <label className="block text-sm font-medium mb-2">Anthropic API Key</label>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              placeholder="sk-ant-..."
-              className="w-full px-3 py-2 pr-10 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
-            />
             <button
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              type="submit"
+              disabled={keyInput.trim() === aiApiKey}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:bg-accent-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
             >
-              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              {saved ? <><Check size={14} /> Saved</> : 'Save'}
             </button>
-          </div>
-          <button
-            onClick={handleSaveKey}
-            disabled={keyInput.trim() === aiApiKey}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:bg-accent-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-          >
-            {saved ? <><Check size={14} /> Saved</> : 'Save'}
-          </button>
-        </div>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-          Used for the AI guide when building capabilities. Stored locally.
-        </p>
-      </section>
+          </form>
+        </SectionCard>
+      </div>
 
-      {/* Version info */}
-      <section className="pt-4 border-t border-black/5 dark:border-white/5">
+      <div className="mt-6 pt-4 border-t border-black/5 dark:border-white/5">
         <p className="text-xs text-gray-400 dark:text-gray-500">
           Purroxy v0.1.0
           {window.purroxy && (
             <> &middot; Electron {window.purroxy.versions.electron} &middot; {window.purroxy.platform}</>
           )}
         </p>
-      </section>
+      </div>
     </div>
   )
 }
@@ -170,20 +106,27 @@ function AccountSection() {
 
   useEffect(() => {
     refreshStatus()
-    // Refresh when window regains focus (catches post-checkout state)
     const onFocus = () => refreshStatus()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  const handleAuth = async (mode: 'login' | 'signup') => {
-    if (!email.trim() || !password.trim()) return
-    setLoading(true); setError('')
-    const result = mode === 'signup'
+  const handleAuth = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!showAuth || !email.trim() || !password.trim()) return
+    setLoading(true)
+    setError('')
+    const result = showAuth === 'signup'
       ? await window.purroxy.account.signup(email, password)
       : await window.purroxy.account.login(email, password)
-    if (result.error) { setError(result.error) }
-    else { setShowAuth(null); setEmail(''); setPassword(''); refreshStatus() }
+    if (result.error) {
+      setError(result.error)
+    } else {
+      setShowAuth(null)
+      setEmail('')
+      setPassword('')
+      refreshStatus()
+    }
     setLoading(false)
   }
 
@@ -206,21 +149,20 @@ function AccountSection() {
 
   if (!status) return null
 
-  // Badge component
   const Badge = ({ type }: { type: string }) => {
     const styles: Record<string, string> = {
       trial: 'bg-accent/10 text-accent border-accent/20',
       subscribed: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/30',
       contributor: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/30',
       expired: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/30',
-      cancelled: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/30'
+      cancelled: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/30',
     }
     const labels: Record<string, string> = {
-      trial: `${status.trialDaysLeft}d trial`,
+      trial: `${status!.trialDaysLeft}d trial`,
       subscribed: 'Subscribed',
       contributor: 'Contributor',
       expired: 'Expired',
-      cancelled: 'Cancelled'
+      cancelled: 'Cancelled',
     }
     return (
       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${styles[type] || ''}`}>
@@ -230,210 +172,283 @@ function AccountSection() {
   }
 
   return (
-    <section className="mb-8">
-      <label className="block text-sm font-medium mb-2">Account</label>
-
+    <SectionCard title="Account" description="License management and community features.">
       {status.loggedIn ? (
         <div className="space-y-3">
-          <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium">{status.email}</p>
-                <Badge type={status.accountType} />
-              </div>
-              <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
-                Log out
-              </button>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium">{status.email}</p>
+              <Badge type={status.accountType} />
             </div>
-
-            {/* Trial progress bar */}
-            {status.accountType === 'trial' && status.trialDaysLeft !== null && (
-              <div className="mt-3">
-                <div className="flex justify-between text-[10px] text-gray-400 mb-1">
-                  <span>{status.trialDaysLeft} days remaining</span>
-                  <button onClick={handleSubscribe} disabled={loading} className="text-accent hover:text-accent-light font-medium">
-                    Subscribe now
-                  </button>
-                </div>
-                <div className="h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-accent transition-all"
-                    style={{ width: `${Math.max(5, ((14 - status.trialDaysLeft) / 14) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Subscribed — manage link */}
-            {status.accountType === 'subscribed' && (
-              <p className="text-xs text-gray-400 mt-2">
-                <button onClick={handleManage} className="text-accent hover:text-accent-light font-medium">
-                  Manage subscription
-                </button>
-              </p>
-            )}
-
-            {/* Contributor — thank you */}
-            {status.accountType === 'contributor' && (
-              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-                Free forever. Thank you for sharing.
-              </p>
-            )}
-
-            {/* Expired — subscribe CTA */}
-            {status.accountType === 'expired' && (
-              <div className="mt-3">
-                <button onClick={handleSubscribe} disabled={loading}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors disabled:opacity-50">
-                  {loading ? 'Opening...' : 'Subscribe ($3.89/mo)'}
-                </button>
-                <p className="text-[10px] text-gray-400 text-center mt-1.5">
-                  Or share a capability to the community for free access
-                </p>
-              </div>
-            )}
-
-            {/* Cancelled — resubscribe CTA */}
-            {status.accountType === 'cancelled' && (
-              <div className="mt-3">
-                <button onClick={handleSubscribe} disabled={loading}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors disabled:opacity-50">
-                  {loading ? 'Opening...' : 'Resubscribe ($3.89/mo)'}
-                </button>
-              </div>
-            )}
-
-            {/* Email verification notice */}
-            {!status.emailVerified && (
-              <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-2">
-                Check your email to verify your account.
-              </p>
-            )}
+            <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
+              Log out
+            </button>
           </div>
+
+          {status.accountType === 'trial' && status.trialDaysLeft !== null && (
+            <div className="rounded-lg bg-accent/5 border border-accent/10 p-3">
+              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
+                <span>{status.trialDaysLeft} days remaining</span>
+                <button onClick={handleSubscribe} disabled={loading} className="text-accent hover:text-accent-light font-medium">
+                  Subscribe now
+                </button>
+              </div>
+              <div className="h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-accent transition-all"
+                  style={{ width: `${Math.max(5, ((14 - status.trialDaysLeft) / 14) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {status.accountType === 'subscribed' && (
+            <button onClick={handleManage} className="text-xs text-accent hover:text-accent-light font-medium">
+              Manage subscription
+            </button>
+          )}
+
+          {status.accountType === 'contributor' && (
+            <p className="text-xs text-green-600 dark:text-green-400">
+              Free forever. Thank you for sharing.
+            </p>
+          )}
+
+          {status.accountType === 'expired' && (
+            <div>
+              <button onClick={handleSubscribe} disabled={loading}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors disabled:opacity-50">
+                {loading ? 'Opening...' : 'Subscribe ($3.89/mo)'}
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-2">
+                Or share a capability to the community for free access
+              </p>
+            </div>
+          )}
+
+          {status.accountType === 'cancelled' && (
+            <button onClick={handleSubscribe} disabled={loading}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors disabled:opacity-50">
+              {loading ? 'Opening...' : 'Resubscribe ($3.89/mo)'}
+            </button>
+          )}
+
+          {!status.emailVerified && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Check your email to verify your account.
+            </p>
+          )}
 
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
       ) : showAuth ? (
-        <div className="space-y-2 p-3 rounded-lg border border-accent/30 bg-accent/5">
+        <form onSubmit={handleAuth} className="space-y-3">
           <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" autoFocus
             className="w-full px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50" />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password (8+ chars)"
             className="w-full px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50" />
           {error && <p className="text-xs text-red-500">{error}</p>}
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => { setShowAuth(null); setError('') }} className="px-3 py-1.5 rounded-lg text-xs text-gray-500">Cancel</button>
-            <button onClick={() => handleAuth(showAuth)} disabled={loading}
-              className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-light disabled:opacity-40">
-              {loading ? 'Loading...' : showAuth === 'signup' ? 'Create Account' : 'Log In'}
-            </button>
+          <div className="flex items-center justify-between pt-1">
+            <p className="text-xs text-gray-400">
+              {showAuth === 'login' ? (
+                <>No account? <button type="button" onClick={() => { setShowAuth('signup'); setError('') }} className="text-accent hover:text-accent-light">Sign up</button></>
+              ) : (
+                <>Have an account? <button type="button" onClick={() => { setShowAuth('login'); setError('') }} className="text-accent hover:text-accent-light">Log in</button></>
+              )}
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { setShowAuth(null); setError(''); setEmail(''); setPassword('') }}
+                className="px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+                Cancel
+              </button>
+              <button type="submit" disabled={loading || !email.trim() || !password.trim()}
+                className="px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-light disabled:opacity-40 transition-colors">
+                {loading ? 'Loading...' : showAuth === 'signup' ? 'Create Account' : 'Log In'}
+              </button>
+            </div>
           </div>
-          <p className="text-xs text-center text-gray-400">
-            {showAuth === 'login' ? (
-              <>No account? <button onClick={() => setShowAuth('signup')} className="text-accent">Sign up</button></>
-            ) : (
-              <>Have an account? <button onClick={() => setShowAuth('login')} className="text-accent">Log in</button></>
-            )}
-          </p>
-        </div>
+        </form>
       ) : (
-        <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
-          <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-            Create an account for license management and community features.
-          </p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Not signed in</p>
           <div className="flex gap-2">
-            <button onClick={() => setShowAuth('signup')} className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors">
-              Sign Up
-            </button>
             <button onClick={() => setShowAuth('login')} className="px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-xs font-medium hover:bg-black/10 dark:hover:bg-white/15 transition-colors">
               Log In
+            </button>
+            <button onClick={() => setShowAuth('signup')} className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors">
+              Sign Up
             </button>
           </div>
         </div>
       )}
-    </section>
+    </SectionCard>
   )
 }
 
-function LockSettings() {
+function ClaudeDesktopSection() {
+  const [status, setStatus] = useState<{ installed: boolean; connected: boolean; configPath?: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+
+  const checkStatus = async () => {
+    const s = await window.purroxy.claude.getStatus()
+    setStatus(s)
+  }
+
+  useEffect(() => { checkStatus() }, [])
+
+  const handleConnect = async () => {
+    setConnecting(true)
+    const result = await window.purroxy.claude.connect()
+    if (result.success) await checkStatus()
+    setConnecting(false)
+  }
+
+  const handleDisconnect = async () => {
+    await window.purroxy.claude.disconnect()
+    await checkStatus()
+  }
+
+  return (
+    <SectionCard title="Claude Desktop" description="Let Claude Desktop run your Purroxy capabilities.">
+      {status === null ? (
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <Loader2 size={14} className="animate-spin" /> Checking...
+        </div>
+      ) : !status.installed ? (
+        <div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Claude Desktop is not installed.</p>
+          <a href="https://claude.ai/download" target="_blank" rel="noreferrer"
+            className="text-sm text-accent hover:text-accent-light font-medium mt-1 inline-block">
+            Download Claude Desktop
+          </a>
+        </div>
+      ) : status.connected ? (
+        <div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
+              <span className="text-sm font-medium text-green-700 dark:text-green-300">Connected</span>
+            </div>
+            <button onClick={handleDisconnect}
+              className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors">
+              <Unlink size={12} /> Disconnect
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+            Restart Claude Desktop if you just connected.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <button onClick={handleConnect} disabled={connecting}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors disabled:opacity-60">
+            {connecting ? (
+              <><Loader2 size={14} className="animate-spin" /> Connecting...</>
+            ) : (
+              <><Link2 size={14} /> Connect to Claude Desktop</>
+            )}
+          </button>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+            Purroxy must be running for Claude to use your capabilities.
+          </p>
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+function LockSection() {
   const [config, setConfig] = useState<{ enabled: boolean; timeoutMinutes: number; hasPin: boolean; isLocked: boolean } | null>(null)
   const [showSetup, setShowSetup] = useState(false)
+  const [showDisable, setShowDisable] = useState(false)
   const [pin, setPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
   const [disablePin, setDisablePin] = useState('')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    window.purroxy.lock.getConfig().then(setConfig)
-  }, [])
+  const refreshConfig = () => window.purroxy.lock.getConfig().then(setConfig)
 
-  const handleSetPin = async () => {
+  useEffect(() => { refreshConfig() }, [])
+
+  const handleSetPin = async (e: FormEvent) => {
+    e.preventDefault()
     if (pin.length < 4) { setError('PIN must be at least 4 digits'); return }
-    if (pin !== confirmPin) { setError('PINs don\'t match'); return }
+    if (pin !== confirmPin) { setError("PINs don't match"); return }
     await window.purroxy.lock.setPin(pin)
     setPin(''); setConfirmPin(''); setShowSetup(false); setError('')
-    window.purroxy.lock.getConfig().then(setConfig)
+    refreshConfig()
   }
 
-  const handleDisable = async () => {
+  const handleDisable = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!disablePin) return
     const result = await window.purroxy.lock.disable(disablePin)
     if (result.error) { setError(result.error); return }
-    setDisablePin(''); setError('')
-    window.purroxy.lock.getConfig().then(setConfig)
+    setDisablePin(''); setShowDisable(false); setError('')
+    refreshConfig()
   }
 
   const handleTimeout = async (minutes: number) => {
     await window.purroxy.lock.setTimeout(minutes)
-    window.purroxy.lock.getConfig().then(setConfig)
+    refreshConfig()
   }
 
   if (!config) return null
 
   return (
-    <section className="mb-8">
-      <label className="block text-sm font-medium mb-2">App Lock</label>
-
+    <SectionCard title="App Lock" description="Block all capability execution when locked.">
       {config.enabled ? (
-        <div className="space-y-3">
-          <div className="rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Lock size={14} className="text-green-600" />
-                <span className="text-sm font-medium text-green-800 dark:text-green-300">Enabled</span>
-              </div>
-              <button onClick={() => window.purroxy.lock.lockNow()}
-                className="text-xs text-accent hover:text-accent-light font-medium">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Lock size={14} className="text-green-600" />
+              <span className="text-sm font-medium">Enabled</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => window.purroxy.lock.lockNow()}
+                className="text-xs text-accent hover:text-accent-light font-medium transition-colors">
                 Lock now
               </button>
-            </div>
-            <p className="text-xs text-green-700 dark:text-green-400/80 mt-1">
-              Auto-locks after {config.timeoutMinutes} minutes of inactivity. MCP blocked while locked.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Timeout:</span>
-            {[1, 5, 15, 30].map(m => (
-              <button key={m} onClick={() => handleTimeout(m)}
-                className={`px-2 py-1 rounded text-xs transition-colors ${config.timeoutMinutes === m ? 'bg-accent text-white' : 'bg-black/5 dark:bg-white/10 text-gray-500 hover:bg-black/10 dark:hover:bg-white/15'}`}>
-                {m}m
+              <button type="button" onClick={() => { setShowDisable(!showDisable); setDisablePin(''); setError('') }}
+                className="text-xs text-gray-400 hover:text-red-500 font-medium transition-colors">
+                Disable
               </button>
-            ))}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input type="password" inputMode="numeric" pattern="[0-9]*" value={disablePin}
-              onChange={e => { setDisablePin(e.target.value.replace(/\D/g, '')); setError('') }}
-              placeholder="Enter PIN to disable" maxLength={8}
-              className="flex-1 px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50" />
-            <button onClick={handleDisable} disabled={!disablePin}
-              className="px-3 py-1.5 rounded-lg text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium disabled:opacity-40 transition-colors">
-              Disable
-            </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">Auto-lock after</span>
+            <div className="flex gap-1.5">
+              {[1, 5, 15, 30].map(m => (
+                <button key={m} type="button" onClick={() => handleTimeout(m)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    config.timeoutMinutes === m
+                      ? 'bg-accent text-white'
+                      : 'bg-black/5 dark:bg-white/10 text-gray-500 hover:bg-black/10 dark:hover:bg-white/15'
+                  }`}>
+                  {m}m
+                </button>
+              ))}
+            </div>
           </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
+
+          {showDisable && (
+            <form onSubmit={handleDisable} className="flex items-center gap-2 pt-3 border-t border-black/5 dark:border-white/5">
+              <input type="password" inputMode="numeric" pattern="[0-9]*" value={disablePin}
+                onChange={e => { setDisablePin(e.target.value.replace(/\D/g, '')); setError('') }}
+                placeholder="Enter PIN to disable" maxLength={8} autoFocus
+                className="flex-1 px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50" />
+              <button type="submit" disabled={!disablePin}
+                className="px-3 py-1.5 rounded-lg text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium disabled:opacity-40 transition-colors">
+                Confirm
+              </button>
+            </form>
+          )}
+
+          {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
         </div>
       ) : showSetup ? (
-        <div className="space-y-2 p-3 rounded-lg border border-accent/30 bg-accent/5">
+        <form onSubmit={handleSetPin} className="space-y-3">
           <input type="password" inputMode="numeric" pattern="[0-9]*" value={pin}
             onChange={e => { setPin(e.target.value.replace(/\D/g, '')); setError('') }}
             placeholder="Set a PIN (4+ digits)" maxLength={8} autoFocus
@@ -444,23 +459,25 @@ function LockSettings() {
             className="w-full px-3 py-2 rounded-lg bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50" />
           {error && <p className="text-xs text-red-500">{error}</p>}
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setShowSetup(false); setPin(''); setConfirmPin(''); setError('') }}
-              className="px-3 py-1.5 rounded-lg text-xs text-gray-500">Cancel</button>
-            <button onClick={handleSetPin}
-              className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-light">Enable</button>
+            <button type="button" onClick={() => { setShowSetup(false); setPin(''); setConfirmPin(''); setError('') }}
+              className="px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+              Cancel
+            </button>
+            <button type="submit"
+              className="px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-light transition-colors">
+              Enable
+            </button>
           </div>
-        </div>
+        </form>
       ) : (
-        <div className="rounded-lg bg-black/5 dark:bg-white/5 p-3">
-          <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-            Set a PIN to auto-lock Purroxy after inactivity. All capability execution is blocked while locked.
-          </p>
-          <button onClick={() => setShowSetup(true)}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500 dark:text-gray-400">PIN lock is not configured</p>
+          <button type="button" onClick={() => setShowSetup(true)}
             className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors">
             Set up PIN
           </button>
         </div>
       )}
-    </section>
+    </SectionCard>
   )
 }
