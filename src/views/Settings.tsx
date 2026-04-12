@@ -134,103 +134,29 @@ function AccountSection() {
     refreshStatus()
   }
 
-  const handleSubscribe = async () => {
-    setLoading(true)
-    const result = await window.purroxy.account.subscribe()
-    if (result.error) setError(result.error)
-    setLoading(false)
-  }
-
-  const handleManage = async () => {
-    const result = await window.purroxy.account.manageSubscription()
-    if (result.error) setError(result.error)
-  }
-
   if (!status) return null
 
-  const Badge = ({ type }: { type: string }) => {
-    const styles: Record<string, string> = {
-      trial: 'bg-accent/10 text-accent border-accent/20',
-      subscribed: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/30',
-      contributor: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/30',
-      expired: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800/30',
-      cancelled: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/30',
-    }
-    const labels: Record<string, string> = {
-      trial: `${status!.trialDaysLeft}d trial`,
-      subscribed: 'Subscribed',
-      contributor: 'Contributor',
-      expired: 'Expired',
-      cancelled: 'Cancelled',
-    }
-    return (
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border ${styles[type] || ''}`}>
-        {labels[type] || type}
-      </span>
-    )
-  }
-
   return (
-    <SectionCard title="Account" description="License management and community features.">
+    <SectionCard title="Account" description="Sign up to reserve your free alpha access.">
       {status.loggedIn ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium">{status.email}</p>
-              <Badge type={status.accountType} />
+              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/30">
+                Alpha
+              </span>
             </div>
             <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500 transition-colors">
               Log out
             </button>
           </div>
 
-          {status.accountType === 'trial' && status.trialDaysLeft !== null && (
-            <div className="rounded-lg bg-accent/5 border border-accent/10 p-3">
-              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
-                <span>{status.trialDaysLeft} days remaining</span>
-                <button onClick={handleSubscribe} disabled={loading} className="text-accent hover:text-accent-light font-medium">
-                  Subscribe now
-                </button>
-              </div>
-              <div className="h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-accent transition-all"
-                  style={{ width: `${Math.max(5, ((14 - status.trialDaysLeft) / 14) * 100)}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {status.accountType === 'subscribed' && (
-            <button onClick={handleManage} className="text-xs text-accent hover:text-accent-light font-medium">
-              Manage subscription
-            </button>
-          )}
-
-          {status.accountType === 'contributor' && (
-            <p className="text-xs text-green-600 dark:text-green-400">
-              Free forever. Thank you for sharing.
+          <div className="rounded-lg bg-green-50/50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/20 p-3">
+            <p className="text-xs text-green-800 dark:text-green-300">
+              All features are free during the alpha. Subscriptions are coming — your early account will be grandfathered in.
             </p>
-          )}
-
-          {status.accountType === 'expired' && (
-            <div>
-              <button onClick={handleSubscribe} disabled={loading}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors disabled:opacity-50">
-                {loading ? 'Opening...' : 'Subscribe ($3.89/mo)'}
-              </button>
-              <p className="text-xs text-gray-400 text-center mt-2">
-                Or share a capability to the community for free access
-              </p>
-            </div>
-          )}
-
-          {status.accountType === 'cancelled' && (
-            <button onClick={handleSubscribe} disabled={loading}
-              className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors disabled:opacity-50">
-              {loading ? 'Opening...' : 'Resubscribe ($3.89/mo)'}
-            </button>
-          )}
+          </div>
 
           {!status.emailVerified && (
             <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -268,14 +194,16 @@ function AccountSection() {
           </div>
         </form>
       ) : (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Not signed in</p>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Purroxy is in alpha — all features are free. Sign up now to lock in free access during pre-release.
+          </p>
           <div className="flex gap-2">
-            <button onClick={() => setShowAuth('login')} className="px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-xs font-medium hover:bg-black/10 dark:hover:bg-white/15 transition-colors">
-              Log In
-            </button>
             <button onClick={() => setShowAuth('signup')} className="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors">
               Sign Up
+            </button>
+            <button onClick={() => setShowAuth('login')} className="px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-xs font-medium hover:bg-black/10 dark:hover:bg-white/15 transition-colors">
+              Log In
             </button>
           </div>
         </div>

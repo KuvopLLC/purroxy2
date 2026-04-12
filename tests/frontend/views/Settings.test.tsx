@@ -4,7 +4,7 @@ import '@testing-library/jest-dom'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '../../setup/dom-setup'
 import { getPurroxyMock, resetPurroxyMock } from '../../setup/dom-setup'
-import { buildAccountStatus, trialStatus, subscribedStatus, contributorStatus, expiredStatus, cancelledStatus } from '../../factories/account-factory'
+import { buildAccountStatus, trialStatus } from '../../factories/account-factory'
 import { useSettings } from '../../../src/stores/settings'
 
 // Mock react-router-dom
@@ -53,7 +53,7 @@ describe('Settings view', () => {
   // ════════════════════════════════════════════════════════════════════════════
 
   describe('AccountSection', () => {
-    it('renders login/signup buttons when logged out', async () => {
+    it('renders alpha messaging and signup when logged out', async () => {
       const api = getPurroxyMock()
       api.account.getStatus.mockResolvedValue(buildAccountStatus())
       api.claude.getStatus.mockResolvedValue({ installed: false, connected: false })
@@ -63,72 +63,21 @@ describe('Settings view', () => {
       await waitFor(() => {
         expect(screen.getByText('Sign Up')).toBeInTheDocument()
         expect(screen.getByText('Log In')).toBeInTheDocument()
+        expect(screen.getByText(/Purroxy is in alpha/)).toBeInTheDocument()
       })
     })
 
-    it('shows trial badge with progress bar', async () => {
+    it('shows alpha badge and grandfathering message when logged in', async () => {
       const api = getPurroxyMock()
-      api.account.getStatus.mockResolvedValue(trialStatus({ trialDaysLeft: 10 }))
+      api.account.getStatus.mockResolvedValue(trialStatus())
       api.claude.getStatus.mockResolvedValue({ installed: false, connected: false })
 
       render(<Settings />)
 
       await waitFor(() => {
-        expect(screen.getByText('10d trial')).toBeInTheDocument()
-        expect(screen.getByText('10 days remaining')).toBeInTheDocument()
-        expect(screen.getByText('Subscribe now')).toBeInTheDocument()
-      })
-    })
-
-    it('shows subscribed badge with manage link', async () => {
-      const api = getPurroxyMock()
-      api.account.getStatus.mockResolvedValue(subscribedStatus())
-      api.claude.getStatus.mockResolvedValue({ installed: false, connected: false })
-
-      render(<Settings />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Subscribed')).toBeInTheDocument()
-        expect(screen.getByText('Manage subscription')).toBeInTheDocument()
-      })
-    })
-
-    it('shows contributor badge', async () => {
-      const api = getPurroxyMock()
-      api.account.getStatus.mockResolvedValue(contributorStatus())
-      api.claude.getStatus.mockResolvedValue({ installed: false, connected: false })
-
-      render(<Settings />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Contributor')).toBeInTheDocument()
-        expect(screen.getByText('Free forever. Thank you for sharing.')).toBeInTheDocument()
-      })
-    })
-
-    it('shows expired with subscribe CTA', async () => {
-      const api = getPurroxyMock()
-      api.account.getStatus.mockResolvedValue(expiredStatus())
-      api.claude.getStatus.mockResolvedValue({ installed: false, connected: false })
-
-      render(<Settings />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Expired')).toBeInTheDocument()
-        expect(screen.getByText('Subscribe ($3.89/mo)')).toBeInTheDocument()
-      })
-    })
-
-    it('shows cancelled with resubscribe', async () => {
-      const api = getPurroxyMock()
-      api.account.getStatus.mockResolvedValue(cancelledStatus())
-      api.claude.getStatus.mockResolvedValue({ installed: false, connected: false })
-
-      render(<Settings />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Cancelled')).toBeInTheDocument()
-        expect(screen.getByText('Resubscribe ($3.89/mo)')).toBeInTheDocument()
+        expect(screen.getByText('Alpha')).toBeInTheDocument()
+        expect(screen.getByText(/free during the alpha/)).toBeInTheDocument()
+        expect(screen.getByText(/grandfathered/)).toBeInTheDocument()
       })
     })
 

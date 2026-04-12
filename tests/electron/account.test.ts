@@ -74,10 +74,11 @@ describe('account', () => {
       expect(isLicenseValid()).toBe(true)
     })
 
-    it('returns false for an expired trial', async () => {
+    // During alpha, all license checks return true regardless of plan state
+    it('returns true for an expired trial (alpha bypass)', async () => {
       const past = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
       await simulateLogin({ plan: 'trial', status: 'trial', trialEndsAt: past })
-      expect(isLicenseValid()).toBe(false)
+      expect(isLicenseValid()).toBe(true)
     })
 
     it('returns true for an active monthly subscription', async () => {
@@ -85,9 +86,9 @@ describe('account', () => {
       expect(isLicenseValid()).toBe(true)
     })
 
-    it('returns false for a canceled monthly subscription', async () => {
+    it('returns true for a canceled monthly subscription (alpha bypass)', async () => {
       await simulateLogin({ plan: 'monthly', status: 'canceled' })
-      expect(isLicenseValid()).toBe(false)
+      expect(isLicenseValid()).toBe(true)
     })
 
     it('returns true for a contributor plan', async () => {
@@ -95,14 +96,14 @@ describe('account', () => {
       expect(isLicenseValid()).toBe(true)
     })
 
-    it('returns false for an unknown plan', async () => {
+    it('returns true for an unknown plan (alpha bypass)', async () => {
       await simulateLogin({ plan: 'unknown', status: 'unknown' })
-      expect(isLicenseValid()).toBe(false)
+      expect(isLicenseValid()).toBe(true)
     })
 
-    it('returns false for a trial with no trialEndsAt', async () => {
+    it('returns true for a trial with no trialEndsAt (alpha bypass)', async () => {
       await simulateLogin({ plan: 'trial', status: 'trial', trialEndsAt: null })
-      expect(isLicenseValid()).toBe(false)
+      expect(isLicenseValid()).toBe(true)
     })
   })
 
@@ -368,7 +369,7 @@ describe('account', () => {
 
       const result = await callHandler('account:validate')
       expect(result.offline).toBe(true)
-      expect(result.valid).toBe(false)
+      expect(result.valid).toBe(true) // alpha: always valid
     })
   })
 
@@ -525,27 +526,24 @@ describe('account', () => {
       expect(result.allowed).toBe(true)
     })
 
-    it('blocks usage for expired trial with reason', async () => {
+    // During alpha, canUse always allows regardless of plan state
+    it('allows usage for expired trial (alpha bypass)', async () => {
       const past = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
       await simulateLogin({ plan: 'trial', status: 'trial', trialEndsAt: past })
       const result = await callHandler('account:canUse')
-      expect(result.allowed).toBe(false)
-      expect(result.reason).toContain('trial has ended')
+      expect(result.allowed).toBe(true)
     })
 
-    it('blocks usage for cancelled subscription with reason', async () => {
+    it('allows usage for cancelled subscription (alpha bypass)', async () => {
       await simulateLogin({ plan: 'monthly', status: 'canceled' })
       const result = await callHandler('account:canUse')
-      expect(result.allowed).toBe(false)
-      expect(result.reason).toContain('cancelled')
+      expect(result.allowed).toBe(true)
     })
 
-    it('blocks usage for unknown plan (treated as expired)', async () => {
+    it('allows usage for unknown plan (alpha bypass)', async () => {
       await simulateLogin({ plan: 'unknown', status: 'unknown' })
       const result = await callHandler('account:canUse')
-      expect(result.allowed).toBe(false)
-      // Unknown plans fall through to 'expired' in getAccountType
-      expect(result.reason).toContain('trial has ended')
+      expect(result.allowed).toBe(true)
     })
   })
 

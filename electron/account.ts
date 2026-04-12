@@ -26,14 +26,17 @@ const accountStore = new Store<AccountSchema>({
   }
 })
 
+// Alpha: all features are free. Subscription enforcement will be enabled
+// when the app moves out of pre-release (v1.0.0+).
+const ALPHA = true
+
 export function isLicenseValid(): boolean {
+  if (ALPHA) return true
+
   const plan = accountStore.get('plan')
   const status = accountStore.get('status')
 
-  // No account yet — allow usage during development
-  // TODO: Remove this bypass before production release
-  if (!plan && !status) return true
-
+  if (!plan && !status) return false
   if (plan === 'contributor') return true
   if (plan === 'monthly' && (status === 'active' || status === 'trialing')) return true
   if (plan === 'trial') {
@@ -238,11 +241,11 @@ export function setupAccount() {
   })
 
   ipcMain.handle('account:canUse', () => {
+    if (ALPHA) return { allowed: true }
+
     const loggedIn = !!accountStore.get('token')
     if (!loggedIn) {
-      // Allow usage without login during dev
-      // TODO: Require login before production release
-      return { allowed: true }
+      return { allowed: false, reason: 'Please sign in to use Purroxy.' }
     }
 
     if (isLicenseValid()) {
