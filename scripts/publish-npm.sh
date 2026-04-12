@@ -6,7 +6,7 @@
 # don't need. This script creates a minimal package.json with only the
 # MCP SDK dependency, publishes, then restores the original.
 #
-set -euo pipefail
+set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -39,7 +39,10 @@ cat package.json
 echo ""
 
 npm publish "$@"
+RESULT=$?
 
-# Restore
+# Always restore original package.json
 mv package.json.bak package.json
 echo "Restored original package.json"
+
+exit $RESULT
