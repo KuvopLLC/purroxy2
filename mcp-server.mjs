@@ -54,6 +54,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     for (const t of tools) {
       toolMap[t.name] = t._capabilityId
     }
+    // Update baseline for change detection
+    lastToolNames = tools.map(t => t.name).sort().join(',')
     return {
       tools: tools.map(t => ({
         name: t.name,
@@ -95,12 +97,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     })
 
     let text = ''
-    if (result.data?._pageContent) {
-      text = result.data._pageContent
-    } else if (result.data && Object.keys(result.data).length > 0) {
-      text = Object.entries(result.data)
-        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-        .join('\n')
+    if (result.data) {
+      // Show CSS-extracted fields first (excluding page content)
+      const fields = Object.entries(result.data)
+        .filter(([k]) => k !== '_pageContent')
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+      if (fields.length > 0) {
+        text = fields
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join('\n')
+      }
+      // Append page content for anything selectors missed
+      if (result.data._pageContent) {
+        if (text) text += '\n\n--- Page Content ---\n'
+        text += result.data._pageContent
+      }
     }
     if (result.error) {
       text += `\n\n(Note: ${result.error})`
@@ -117,6 +128,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 })
+
+// Poll for capability changes and notify Claude to refresh tools
+let lastToolNames = ''
+setInterval(async () => {
+  try {
+    const { tools } = await apiCall('/tools')
+    const names = tools.map(t => t.name).sort().join(',')
+    if (lastToolNames && names !== lastToolNames) {
+      process.stderr.write('[Purroxy MCP] Tool list changed, notifying client\n')
+      await server.sendToolListChanged()
+    }
+    lastToolNames = names
+  } catch {}
+}, 5000)
 
 // Start
 const transport = new StdioServerTransport()

@@ -142,10 +142,12 @@ export class PlaywrightEngine {
         this.addLog(`Page text captured: ${pageContent.length} chars`)
       } catch {}
 
-      // If CSS extraction got nothing useful, put page content as the data
-      if (cssFieldsFound === 0 && pageContent) {
+      // Always include page text so the AI can parse what selectors missed
+      if (pageContent) {
         data['_pageContent'] = pageContent
-        this.addLog('Using page text as fallback extraction')
+        if (cssFieldsFound === 0) {
+          this.addLog('No CSS fields matched — using page text as primary data')
+        }
       }
 
       const screenshotBuffer = await this.page.screenshot({ type: 'png' })
