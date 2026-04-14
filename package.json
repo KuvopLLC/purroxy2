@@ -5,7 +5,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && npx esbuild mcp-server.mjs --bundle --platform=node --format=esm --outfile=dist-electron/mcp-server.mjs",
     "preview": "vite preview",
     "package": "npm run build && electron-builder",
     "test": "vitest run",
@@ -46,13 +46,10 @@
       "dist/**/*",
       "dist-electron/**/*",
       "resources/**/*",
-      "build/**/*",
-      "mcp-server.mjs",
-      "node_modules/@modelcontextprotocol/**/*"
+      "build/**/*"
     ],
     "asarUnpack": [
-      "mcp-server.mjs",
-      "node_modules/@modelcontextprotocol/**/*"
+      "dist-electron/mcp-server.mjs"
     ],
     "mac": {
       "icon": "build/icon.icns",

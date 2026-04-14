@@ -93,12 +93,12 @@ export function setupIPC() {
     try {
       const configPath = getClaudeConfigPath()
 
-      // Get absolute path to mcp-server.mjs
-      // In packaged app, asarUnpack puts it at app.asar.unpacked/mcp-server.mjs
+      // Get absolute path to the bundled mcp-server.mjs in dist-electron/
+      // In packaged app, asarUnpack puts it at app.asar.unpacked/dist-electron/mcp-server.mjs
       const appPath = app.getAppPath()
       const mcpServerPath = appPath.includes('.asar')
-        ? path.resolve(appPath.replace('.asar', '.asar.unpacked'), 'mcp-server.mjs')
-        : path.resolve(appPath, 'mcp-server.mjs')
+        ? path.resolve(appPath.replace('.asar', '.asar.unpacked'), 'dist-electron', 'mcp-server.mjs')
+        : path.resolve(appPath, 'dist-electron', 'mcp-server.mjs')
 
       if (!fs.existsSync(mcpServerPath)) {
         console.error('[claude] MCP server not found at:', mcpServerPath)

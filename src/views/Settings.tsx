@@ -115,6 +115,20 @@ function AccountSection() {
     if (!showAuth || !email.trim() || !password.trim()) return
     setLoading(true)
     setError('')
+
+    if (showAuth === 'signup') {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        setError('Please enter a valid email address')
+        setLoading(false)
+        return
+      }
+      if (password.length < 8) {
+        setError('Password must be at least 8 characters')
+        setLoading(false)
+        return
+      }
+    }
+
     const result = showAuth === 'signup'
       ? await window.purroxy.account.signup(email, password)
       : await window.purroxy.account.login(email, password)
