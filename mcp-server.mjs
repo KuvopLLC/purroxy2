@@ -37,48 +37,224 @@ async function apiCall(path, method = 'GET', body = null) {
   return res.json()
 }
 
+// Static tool definitions — always discoverable, even when the desktop app is not running.
+const STATIC_TOOLS = [
+  {
+    name: 'purroxy_list_capabilities',
+    description:
+      'List all browser automation capabilities recorded in Purroxy. ' +
+      'Returns each capability\'s name, description, target website, and required parameters. ' +
+      'Call this first to discover what automations are available before executing one with purroxy_run_capability. ' +
+      'Requires the Purroxy desktop app to be running.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'purroxy_run_capability',
+    description:
+      'Execute a recorded browser automation capability by name. ' +
+      'Purroxy replays the recorded actions in a headless browser with saved session credentials, ' +
+      'then extracts and returns structured data from the resulting page. ' +
+      'Call purroxy_list_capabilities first to discover available capability names and their parameters. ' +
+      'Requires the Purroxy desktop app to be running.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        capability_name: {
+          type: 'string',
+          description: 'The name of the capability to execute, exactly as returned by purroxy_list_capabilities.'
+        },
+        parameters: {
+          type: 'object',
+          description:
+            'Input parameters for the capability as key-value string pairs. ' +
+            'Check purroxy_list_capabilities to see which parameters each capability accepts and which are required.',
+          additionalProperties: { type: 'string' }
+        }
+      },
+      required: ['capability_name']
+    }
+  },
+  {
+    name: 'purroxy_status',
+    description:
+      'Check whether the Purroxy desktop app is running and reachable. ' +
+      'Returns the connection status and the number of available capabilities. ' +
+      'Use this to verify Purroxy is ready before attempting to run automations.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  }
+]
+
 // Create MCP server
 const server = new Server(
   { name: 'purroxy', version: '0.1.0' },
   { capabilities: { tools: {} } }
 )
 
-// Tool name → capability ID mapping
+// Tool name → capability ID mapping (for dynamic per-capability tools)
 let toolMap = {}
 
-// List tools
+// List tools — static tools are always returned; dynamic per-capability tools are appended when the app is running.
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const allTools = [...STATIC_TOOLS]
+
   try {
     const { tools } = await apiCall('/tools')
     toolMap = {}
     for (const t of tools) {
       toolMap[t.name] = t._capabilityId
-    }
-    // Update baseline for change detection
-    lastToolNames = tools.map(t => t.name).sort().join(',')
-    return {
-      tools: tools.map(t => ({
+      allTools.push({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema
-      }))
+      })
     }
-  } catch (err) {
-    return { tools: [] }
+    lastToolNames = tools.map(t => t.name).sort().join(',')
+  } catch {
+    // App not running — static tools are still returned.
   }
+
+  return { tools: allTools }
 })
 
-// Call tool
+// Format execution result into readable text
+function formatResult(result) {
+  let text = ''
+  if (result.data) {
+    const fields = Object.entries(result.data)
+      .filter(([k]) => k !== '_pageContent')
+      .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    if (fields.length > 0) {
+      text = fields
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+        .join('\n')
+    }
+    if (result.data._pageContent) {
+      if (text) text += '\n\n--- Page Content ---\n'
+      text += result.data._pageContent
+    }
+  }
+  if (result.error) {
+    text += `\n\n(Note: ${result.error})`
+  }
+  return text || 'No data extracted.'
+}
+
+// Refresh the tool map from the running app (returns the raw tools array)
+async function refreshToolMap() {
+  const { tools } = await apiCall('/tools')
+  toolMap = {}
+  for (const t of tools) toolMap[t.name] = t._capabilityId
+  return tools
+}
+
+// Call tool — handles both static and dynamic tools
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const toolName = request.params.name
   const args = request.params.arguments || {}
+
+  // ── Static tool: purroxy_status ──
+  if (toolName === 'purroxy_status') {
+    try {
+      const { tools } = await apiCall('/tools')
+      return {
+        content: [{
+          type: 'text',
+          text: `Purroxy is running. ${tools.length} capability${tools.length === 1 ? '' : 'ies'} available.`
+        }]
+      }
+    } catch {
+      return {
+        content: [{ type: 'text', text: 'Purroxy desktop app is not running. Please launch it first.' }],
+        isError: true
+      }
+    }
+  }
+
+  // ── Static tool: purroxy_list_capabilities ──
+  if (toolName === 'purroxy_list_capabilities') {
+    try {
+      const tools = await refreshToolMap()
+      if (tools.length === 0) {
+        return {
+          content: [{ type: 'text', text: 'No capabilities found. Record your first capability in the Purroxy desktop app.' }]
+        }
+      }
+      const lines = tools.map(t => {
+        const params = t.inputSchema?.properties
+          ? Object.entries(t.inputSchema.properties)
+              .map(([k, v]) => `${k}${t.inputSchema.required?.includes(k) ? ' (required)' : ''}: ${v.description || 'no description'}`)
+          : []
+        return `- ${t.description}${params.length > 0 ? '\n  Parameters: ' + params.join(', ') : ''}`
+      })
+      return {
+        content: [{ type: 'text', text: lines.join('\n') }]
+      }
+    } catch {
+      return {
+        content: [{ type: 'text', text: 'Purroxy desktop app is not running. Please launch it first.' }],
+        isError: true
+      }
+    }
+  }
+
+  // ── Static tool: purroxy_run_capability ──
+  if (toolName === 'purroxy_run_capability') {
+    const capName = args.capability_name
+    const params = args.parameters || {}
+
+    if (!capName) {
+      return {
+        content: [{ type: 'text', text: 'capability_name is required. Use purroxy_list_capabilities to see available names.' }],
+        isError: true
+      }
+    }
+
+    try {
+      const tools = await refreshToolMap()
+
+      // Match by capability name (the description starts with "CapName (hostname): ...")
+      const match = tools.find(t => {
+        const descName = t.description.split(' (')[0]
+        return descName.toLowerCase() === capName.toLowerCase()
+      })
+
+      if (!match) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Capability "${capName}" not found. Use purroxy_list_capabilities to see available names.`
+          }],
+          isError: true
+        }
+      }
+
+      const result = await apiCall('/execute', 'POST', {
+        capabilityId: match._capabilityId,
+        params
+      })
+      return { content: [{ type: 'text', text: formatResult(result) }] }
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `Failed: ${err.message}. Is Purroxy running?` }],
+        isError: true
+      }
+    }
+  }
+
+  // ── Dynamic per-capability tool ──
   let capId = toolMap[toolName]
 
   if (!capId) {
-    // Tools list might be stale — try refreshing
     try {
-      const { tools } = await apiCall('/tools')
-      for (const t of tools) toolMap[t.name] = t._capabilityId
+      await refreshToolMap()
       capId = toolMap[toolName]
     } catch {}
 
@@ -95,32 +271,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       capabilityId: capId,
       params: args
     })
-
-    let text = ''
-    if (result.data) {
-      // Show CSS-extracted fields first (excluding page content)
-      const fields = Object.entries(result.data)
-        .filter(([k]) => k !== '_pageContent')
-        .filter(([, v]) => v !== null && v !== undefined && v !== '')
-      if (fields.length > 0) {
-        text = fields
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join('\n')
-      }
-      // Append page content for anything selectors missed
-      if (result.data._pageContent) {
-        if (text) text += '\n\n--- Page Content ---\n'
-        text += result.data._pageContent
-      }
-    }
-    if (result.error) {
-      text += `\n\n(Note: ${result.error})`
-    }
-    if (!text) {
-      text = 'No data extracted.'
-    }
-
-    return { content: [{ type: 'text', text }] }
+    return { content: [{ type: 'text', text: formatResult(result) }] }
   } catch (err) {
     return {
       content: [{ type: 'text', text: `Failed: ${err.message}. Is Purroxy running?` }],
