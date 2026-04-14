@@ -1,6 +1,6 @@
 # Purroxy
 
-[![Tests](https://github.com/mreider/purroxy2/actions/workflows/test.yml/badge.svg)](https://github.com/mreider/purroxy2/actions/workflows/test.yml)
+[![Tests](https://github.com/KuvopLLC/purroxy2/actions/workflows/test.yml/badge.svg)](https://github.com/KuvopLLC/purroxy2/actions/workflows/test.yml)
 
 Record what you do on any website. Securely automate it forever.
 
@@ -8,7 +8,7 @@ Purroxy gives Claude secure access to websites behind your login. You walk throu
 
 ## Download
 
-[Latest release](https://github.com/mreider/purroxy2/releases/latest) — macOS, Windows, Linux.
+[Latest release](https://github.com/KuvopLLC/purroxy2/releases/latest) — macOS, Windows, Linux.
 
 ## How it works
 

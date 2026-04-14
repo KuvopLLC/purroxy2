@@ -5,7 +5,7 @@ compatibility_date = "2024-01-01"
 [vars]
 TRIAL_DAYS = "14"
 APP_URL = "https://purroxy.com"
-GITHUB_REPO = "mreider/purroxy2"
+GITHUB_REPO = "KuvopLLC/purroxy2"
 
 [[d1_databases]]
 binding = "DB"
@@ -27,4 +27,4 @@ id = "4650174727f146ecafb581b76621975d"
 
 [env.production.vars]
 APP_URL = "https://purroxy.com"
-GITHUB_REPO = "mreider/purroxy2"
+GITHUB_REPO = "KuvopLLC/purroxy2"

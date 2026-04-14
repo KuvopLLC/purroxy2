@@ -106,7 +106,7 @@
   <div class="nav-links">
     <a href="#download">Download</a>
     <a href="#pricing">Pricing</a>
-    <a href="https://github.com/mreider/purroxy2">GitHub</a>
+    <a href="https://github.com/KuvopLLC/purroxy2">GitHub</a>
   </div>
 </nav>
 
@@ -115,8 +115,8 @@
   <h1>Give Claude secure access<br>to your accounts.</h1>
   <p style="display:inline-block; background:var(--success-bg); border:1px solid var(--success-border); color:var(--success); font-size:13px; font-weight:600; padding:6px 14px; border-radius:20px; margin-bottom:24px;">Pre-release — free for early users</p>
   <div class="hero-buttons" id="download-buttons">
-    <a href="https://github.com/mreider/purroxy2/releases/latest" class="btn btn-primary" id="download-btn">Download</a>
-    <a href="https://github.com/mreider/purroxy2" class="btn btn-ghost">View Source</a>
+    <a href="https://github.com/KuvopLLC/purroxy2/releases/latest" class="btn btn-primary" id="download-btn">Download</a>
+    <a href="https://github.com/KuvopLLC/purroxy2" class="btn btn-ghost">View Source</a>
   </div>
   <div class="hero-meta" id="download-meta">
     <span id="download-version"></span>
@@ -133,7 +133,7 @@
   var versionEl = document.getElementById('download-version');
   var otherEl = document.getElementById('download-other');
 
-  fetch('https://api.github.com/repos/mreider/purroxy2/releases/latest')
+  fetch('https://api.github.com/repos/KuvopLLC/purroxy2/releases/latest')
     .then(function(r) { return r.json(); })
     .then(function(release) {
       var version = release.tag_name || '';
@@ -244,7 +244,7 @@
     <div class="pricing-card">
       <p class="price"><span style="text-decoration:line-through; color:var(--text-faint); font-size:28px; font-weight:400;">$3.89/mo</span> Free</p>
       <p class="subtitle">Free during pre-release. Early accounts are grandfathered when paid plans launch. Pricing covers token and hosting costs.</p>
-      <a href="https://github.com/mreider/purroxy2/releases/latest" class="btn btn-primary" id="pricing-download-btn">Download</a>
+      <a href="https://github.com/KuvopLLC/purroxy2/releases/latest" class="btn btn-primary" id="pricing-download-btn">Download</a>
       <div class="divider">or</div>
       <div class="contributor-box">
         <p>Contributors use Purroxy free forever</p>
@@ -258,7 +258,7 @@
   <div class="footer-inner">
     <div class="footer-brand"><img src="/icon-192.png" alt="Purroxy"> Purroxy</div>
     <div class="footer-links">
-      <a href="https://github.com/mreider/purroxy2">GitHub</a>
+      <a href="https://github.com/KuvopLLC/purroxy2">GitHub</a>
     </div>
   </div>
 </footer>
