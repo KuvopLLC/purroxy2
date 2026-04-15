@@ -59,7 +59,7 @@
 
     /* Grid */
     .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
-    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
     @media (max-width: 768px) { .grid-3 { grid-template-columns: 1fr; gap: 24px; } .grid-4 { grid-template-columns: repeat(2, 1fr); } }
     .step { text-align: center; }
     .step-num { font-size: 28px; font-weight: 700; margin-bottom: 12px; color: var(--text-faint); }
@@ -215,6 +215,10 @@
       <div class="card">
         <h3>Local extraction</h3>
         <p>At runtime, data is extracted directly from the page on your machine. No page content is sent to any AI. Sensitive results are redacted.</p>
+      </div>
+      <div class="card">
+        <h3>Verified builds</h3>
+        <p>Every release binary has a <a href="https://github.com/actions/attest-build-provenance">GitHub attestation</a> proving it was built from this repo's source code. Verify with <code>gh attestation verify</code>.</p>
       </div>
     </div>
   </div>

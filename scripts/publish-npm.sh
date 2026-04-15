@@ -38,7 +38,7 @@ echo "Publishing slim package:"
 cat package.json
 echo ""
 
-npm publish "$@"
+npm publish --provenance "$@"
 RESULT=$?
 
 # Always restore original package.json

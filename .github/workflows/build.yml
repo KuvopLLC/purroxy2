@@ -191,10 +191,13 @@ jobs:
           shasum -a 256 *.dmg *.exe *.AppImage > checksums.txt 2>/dev/null || true
           cat checksums.txt
 
-      - name: Generate SLSA attestation
+      - name: Attest build provenance for binaries
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: 'artifacts/checksums.txt'
+          subject-path: |
+            artifacts/*.dmg
+            artifacts/*.exe
+            artifacts/*.AppImage
 
       - name: Generate version.json
         run: |
