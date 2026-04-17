@@ -14,6 +14,7 @@ mac:
 win:
   icon: resources/icon.png
   target: nsis
+  artifactName: ${productName}-Setup-${version}.${ext}
 linux:
   category: Utility
   icon: resources/icon.png
