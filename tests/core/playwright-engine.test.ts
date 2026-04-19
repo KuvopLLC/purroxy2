@@ -43,19 +43,27 @@ describe('PlaywrightEngine', () => {
     it('launches headless by default', async () => {
       const { chromium } = await import('playwright')
       await engine.launch()
-      expect(chromium.launch).toHaveBeenCalledWith({ headless: true })
+      expect(chromium.launch).toHaveBeenCalledWith(expect.objectContaining({ headless: true }))
     })
 
     it('launches headless when headless=true', async () => {
       const { chromium } = await import('playwright')
       await engine.launch({ headless: true })
-      expect(chromium.launch).toHaveBeenCalledWith({ headless: true })
+      expect(chromium.launch).toHaveBeenCalledWith(expect.objectContaining({ headless: true }))
     })
 
     it('launches visible when headless=false', async () => {
       const { chromium } = await import('playwright')
       await engine.launch({ headless: false })
-      expect(chromium.launch).toHaveBeenCalledWith({ headless: false })
+      expect(chromium.launch).toHaveBeenCalledWith(expect.objectContaining({ headless: false }))
+    })
+
+    it('launches with HTTP/2 disabled and automation-hint blink feature off', async () => {
+      const { chromium } = await import('playwright')
+      await engine.launch()
+      const call = (chromium.launch as any).mock.calls[0][0]
+      expect(call.args).toContain('--disable-http2')
+      expect(call.args).toContain('--disable-blink-features=AutomationControlled')
     })
 
     it('uses default viewport 1280x800', async () => {
@@ -180,6 +188,71 @@ describe('PlaywrightEngine', () => {
     it('does not call addCookies when no cookies provided', async () => {
       await engine.launch()
       expect(mockContext.addCookies).not.toHaveBeenCalled()
+    })
+
+    // ── cookie hygiene ───────────────────────────────────────────────────
+
+    it('drops expired cookies', async () => {
+      const pastSec = Math.floor(Date.now() / 1000) - 3600
+      const cookies = [
+        { name: 'fresh', value: 'v', domain: '.united.com' },
+        { name: 'stale', value: 'v', domain: '.united.com', expires: pastSec }
+      ]
+      await engine.launch({ cookies, targetDomain: 'www.united.com' })
+      const injected = mockContext.addCookies.mock.calls[0][0]
+      expect(injected).toHaveLength(1)
+      expect(injected[0].name).toBe('fresh')
+    })
+
+    it('keeps cookies whose domain suffix-matches the target host', async () => {
+      const cookies = [
+        { name: 'a', value: 'v', domain: '.united.com' },
+        { name: 'b', value: 'v', domain: 'united.com' },
+        { name: 'c', value: 'v', domain: '.doubleclick.net' }
+      ]
+      await engine.launch({ cookies, targetDomain: 'www.united.com' })
+      const names = mockContext.addCookies.mock.calls[0][0].map((c: any) => c.name).sort()
+      expect(names).toEqual(['a', 'b'])
+    })
+
+    it('keeps all cookies when no targetDomain is given (back-compat)', async () => {
+      const cookies = [
+        { name: 'a', value: 'v', domain: '.united.com' },
+        { name: 'b', value: 'v', domain: '.doubleclick.net' }
+      ]
+      await engine.launch({ cookies })
+      expect(mockContext.addCookies.mock.calls[0][0]).toHaveLength(2)
+    })
+
+    it('drops known bot-mitigation cookies even when domain matches', async () => {
+      const cookies = [
+        { name: '_abck', value: 'v', domain: '.united.com' },       // Akamai
+        { name: 'bm_sv', value: 'v', domain: '.united.com' },       // Akamai
+        { name: '__cf_bm', value: 'v', domain: '.united.com' },     // Cloudflare
+        { name: 'cf_clearance', value: 'v', domain: '.united.com' },// Cloudflare
+        { name: '_pxvid', value: 'v', domain: '.united.com' },      // PerimeterX
+        { name: 'datadome', value: 'v', domain: '.united.com' },    // DataDome
+        { name: 'session', value: 'v', domain: '.united.com' }      // legitimate
+      ]
+      await engine.launch({ cookies, targetDomain: 'www.united.com' })
+      const names = mockContext.addCookies.mock.calls[0][0].map((c: any) => c.name)
+      expect(names).toEqual(['session'])
+    })
+
+    it('logs how many cookies were dropped and in which category', async () => {
+      const pastSec = Math.floor(Date.now() / 1000) - 3600
+      const cookies = [
+        { name: 'keep', value: 'v', domain: '.united.com' },
+        { name: 'stale', value: 'v', domain: '.united.com', expires: pastSec },
+        { name: 'tracker', value: 'v', domain: '.doubleclick.net' },
+        { name: '_abck', value: 'v', domain: '.united.com' }
+      ]
+      await engine.launch({ cookies, targetDomain: 'www.united.com' })
+      const logLine = engine['log'].find((l: string) => l.includes('Injected'))
+      expect(logLine).toContain('Injected 1 cookies')
+      expect(logLine).toContain('1 expired')
+      expect(logLine).toContain('1 cross-domain')
+      expect(logLine).toContain('1 bot-mitigation')
     })
 
     // ── localStorage ──────────────────────────────────────────────────────

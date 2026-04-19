@@ -46,6 +46,12 @@ export default function Builder() {
   const actionsRef = useRef<RecordedAction[]>([])
   actionsRef.current = actions
 
+  // Synchronous guard to prevent the auto-analyze effect from firing twice
+  // under React 18 strict mode / async state commits. Checking the state
+  // variable from inside a setTimeout isn't enough — two timers queued in the
+  // same render cycle both see the pre-commit value.
+  const analyzedRef = useRef(false)
+
   useEffect(() => {
     if (initialUrl) openSite(initialUrl)
     return () => { window.purroxy.browser.close() }
@@ -68,16 +74,17 @@ export default function Builder() {
   }, [])
 
   useEffect(() => {
-    if (!browserOpen || autoAnalyzed || loading) return
+    if (!browserOpen || analyzedRef.current || loading) return
     const timer = setTimeout(async () => {
-      if (autoAnalyzed) return
+      if (analyzedRef.current) return
+      analyzedRef.current = true
       setAutoAnalyzed(true)
 
       // Always let the AI check the actual page content — don't assume saved session means logged in
       await sendAIMessage('Check this page. If it\'s a dedicated login page (password field is the main content), tell me to log in and show the Done button. If it looks like I\'m already on the site\'s main content, suggest capabilities.', { hidden: true })
     }, 1500)
     return () => clearTimeout(timer)
-  }, [browserOpen, loading, autoAnalyzed, url])
+  }, [browserOpen, loading, url])
 
   const sendAIMessage = useCallback(async (userMessage: string, opts?: { isSystem?: boolean; hidden?: boolean }) => {
     setChatLoading(true)
@@ -321,12 +328,13 @@ export default function Builder() {
     setChatMessages([])
     setChatLoading(false)
     setAutoAnalyzed(false)
+    analyzedRef.current = false
     setActions([])
     setCapabilitySaved(false)
     setSavedCapName('')
     setSavedCapDescription('')
     setClickedButtons(new Set())
-    // Re-analyze will trigger via the useEffect since autoAnalyzed is false
+    // Re-analyze will trigger via the useEffect since the ref is now false
   }
 
   const handleClose = async () => {
@@ -536,9 +544,19 @@ function ChatPanel({ messages, loading, input, onInputChange, onSend, isRecordin
   const renderContent = (content: string, msgIndex: number) => {
     const parts = content.split(/({{START_RECORDING}}|{{STOP_RECORDING}}|{{SAVE_SESSION}}|{{DONE}}|{{SAVE_CAPABILITY}}|{{RE_RECORD}}|{{COPY_FOR_CLAUDE}}|{{BUILD_ANOTHER_SITE}})/)
 
+    // Collapse aliases and dedupe within a single message. The model can
+    // violate the "one button per message" rule; the renderer should enforce it.
+    const aliasToCanonical: Record<string, string> = { SAVE_SESSION: 'DONE' }
+    const rendered = new Set<string>()
+
     return parts.map((part, i) => {
       const match = part.match(/^{{(\w+)}}$/)
-      if (match) return renderButton(match[1], msgIndex, i)
+      if (match) {
+        const canonical = aliasToCanonical[match[1]] || match[1]
+        if (rendered.has(canonical)) return null
+        rendered.add(canonical)
+        return renderButton(canonical, msgIndex, i)
+      }
       if (!part.trim()) return null
       return (
         <ReactMarkdown key={`md-${msgIndex}-${i}`}
