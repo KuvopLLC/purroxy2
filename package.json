@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
-    "publish:npm": "bash scripts/publish-npm.sh"
+    "publish:npm": "bash scripts/publish-npm.sh",
+    "spike:united": "electron scripts/spike-electron-replay.mjs",
+    "spike2:united": "node scripts/spike2-patchright-chrome.mjs"
   },
   "repository": {
     "type": "git",
@@ -90,6 +92,7 @@
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
     "jsdom": "^29.0.2",
+    "patchright": "^1.59.4",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.6.0",

@@ -4,7 +4,7 @@ import { getAllSites, getSite, getSession } from './sites'
 import { getAllDecryptedValues } from './vault'
 import { isLocked } from './app-lock'
 import { isLicenseValid } from './account'
-import { PlaywrightEngine } from '../core/browser/playwright-engine'
+import { createBrowserEngine } from '../core/browser/browser-engine'
 import { healSelector } from './healer'
 import { store } from './store'
 import { writeFileSync } from 'fs'
@@ -100,7 +100,7 @@ export function startMCPApi(): number {
           }
 
           const session = getSession(cap.siteProfileId)
-          const engine = new PlaywrightEngine()
+          const engine = createBrowserEngine('playwright')
 
           // Wire AI-based self-healing
           const apiKey = store.get('aiApiKey')
@@ -116,7 +116,8 @@ export function startMCPApi(): number {
               headless: true,
               cookies: session?.cookies || [],
               localStorage: session?.localStorage || {},
-              viewport: (cap as any).viewport || undefined
+              viewport: (cap as any).viewport || undefined,
+              targetDomain: site.hostname
             })
 
             // Auto-prepend navigate if needed

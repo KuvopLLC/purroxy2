@@ -1,19 +1,17 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright'
 import type { BrowserEngineOptions, ExecutionResult, ExtractedData, ExtractionRule, RecordedAction, Parameter, Locator } from './types'
+import type { BrowserEngine, HealerFn } from './browser-engine'
+import {
+  normalizeCookiesForInjection,
+  optimizeActions as optimizeActionsUtil,
+  substituteParams as substituteParamsUtil,
+} from './action-utils'
 
-export type HealerFn = (context: {
-  intent: string
-  label: string
-  tagName: string
-  originalLocators: Array<{ strategy: string; value: string }>
-  domSnapshot: string
-  actionType: string
-  pageUrl: string
-}) => Promise<{ selector: string | null; confidence: string } | null>
+export type { HealerFn } from './browser-engine'
 
 const MAX_HEALS_PER_RUN = 3
 
-export class PlaywrightEngine {
+export class PlaywrightEngine implements BrowserEngine {
   private browser: Browser | null = null
   private context: BrowserContext | null = null
   private page: Page | null = null
@@ -40,40 +38,43 @@ export class PlaywrightEngine {
     this.addLog('Launching browser...')
 
     this.browser = await chromium.launch({
-      headless: options.headless !== false
+      headless: options.headless !== false,
+      args: [
+        // Force HTTP/1.1. Akamai and other bot-mitigation stacks fingerprint
+        // the HTTP/2 SETTINGS frame and reset streams that don't match real
+        // Chrome; switching to HTTP/1.1 avoids that detection vector entirely.
+        // Cost is negligible for browser automation (not perf-sensitive).
+        '--disable-http2',
+        // Remove the navigator.webdriver = true signal and related automation
+        // hints that bot-detection scripts read via JS.
+        '--disable-blink-features=AutomationControlled',
+      ]
     })
 
     const vp = options.viewport || { width: 1280, height: 800 }
     this.addLog(`Viewport: ${vp.width}x${vp.height}`)
 
-    this.context = await this.browser.newContext({
-      viewport: vp,
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    })
+    // Let Playwright use the bundled Chromium's real UA. The old spoofed UA
+    // was frozen at Chrome/120 and actively hurt: Akamai-style bot-detection
+    // flags stale UA strings, and a mismatch between UA and TLS fingerprint
+    // makes replayed sessions look synthetic.
+    this.context = await this.browser.newContext({ viewport: vp })
 
     // Inject cookies if provided
     if (options.cookies && options.cookies.length > 0) {
-      // Normalize Electron cookie format to Playwright format
-      const normalizeSameSite = (s: string | undefined): 'Strict' | 'Lax' | 'None' => {
-        if (!s) return 'Lax'
-        const lower = s.toLowerCase()
-        if (lower === 'strict') return 'Strict'
-        if (lower === 'none' || lower === 'no_restriction') return 'None'
-        return 'Lax' // "unspecified", "lax", or anything else → Lax
-      }
-      const pwCookies = options.cookies
-        .filter((c: any) => c.name && c.value && c.domain) // skip malformed cookies
-        .map((c: any) => ({
-          name: c.name,
-          value: c.value,
-          domain: c.domain,
-          path: c.path || '/',
-          secure: c.secure || false,
-          httpOnly: c.httpOnly || false,
-          sameSite: normalizeSameSite(c.sameSite)
-        }))
+      const { cookies: pwCookies, droppedExpired, droppedCrossDomain, droppedBotMitigation } =
+        normalizeCookiesForInjection(options.cookies, options.targetDomain)
+
       await this.context.addCookies(pwCookies)
-      this.addLog(`Injected ${pwCookies.length} cookies`)
+      const droppedSummary = [
+        droppedExpired && `${droppedExpired} expired`,
+        droppedCrossDomain && `${droppedCrossDomain} cross-domain`,
+        droppedBotMitigation && `${droppedBotMitigation} bot-mitigation`
+      ].filter(Boolean).join(', ')
+      this.addLog(
+        `Injected ${pwCookies.length} cookies` +
+        (droppedSummary ? ` (dropped ${droppedSummary})` : '')
+      )
     } else {
       this.addLog('No cookies to inject')
     }
@@ -217,38 +218,7 @@ export class PlaywrightEngine {
     parameters: Parameter[],
     paramValues: Record<string, string>
   ): RecordedAction[] {
-    return actions.map((action, idx) => {
-      const param = parameters.find(p => p.actionIndex === idx)
-      if (!param) return action
-      const newValue = paramValues[param.name] ?? param.defaultValue
-
-      if (param.field === 'url' && action.url) {
-        // For URL params: replace the default value within the URL, not the whole URL
-        const originalUrl = action.url
-        if (originalUrl.includes(param.defaultValue)) {
-          const substituted = originalUrl.replace(param.defaultValue, newValue)
-          this.addLog(`Param substitution at action ${idx}: ${param.name} = "${newValue}" (in URL)`)
-          return { ...action, url: substituted }
-        } else {
-          // Default value not found in URL — append or skip
-          this.addLog(`Param substitution at action ${idx}: ${param.name} — default "${param.defaultValue}" not found in URL, skipping`)
-          return action
-        }
-      }
-
-      if (param.field === 'value' && action.value) {
-        // For value params: replace the default value within the value, or full replace
-        const originalValue = action.value
-        if (originalValue.includes(param.defaultValue)) {
-          const substituted = originalValue.replace(param.defaultValue, newValue)
-          this.addLog(`Param substitution at action ${idx}: ${param.name} = "${newValue}" (in value)`)
-          return { ...action, value: substituted }
-        }
-      }
-
-      this.addLog(`Param substitution at action ${idx}: ${param.name} = "${newValue}"`)
-      return { ...action, [param.field]: newValue }
-    })
+    return substituteParamsUtil(actions, parameters, paramValues, msg => this.addLog(msg))
   }
 
   private async dismissCookieBanners(): Promise<void> {
@@ -279,25 +249,7 @@ export class PlaywrightEngine {
   }
 
   private optimizeActions(actions: RecordedAction[]): RecordedAction[] {
-    const result: RecordedAction[] = []
-    let lastNavUrl = ''
-
-    for (const action of actions) {
-      // Skip wait actions — page loads naturally during replay
-      if (action.type === 'wait') continue
-
-      // Skip scroll actions with no selector — usually noise
-      if (action.type === 'scroll' && (!action.selector || action.selector === 'window')) continue
-
-      // Skip duplicate consecutive navigations
-      if (action.type === 'navigate' && action.url === lastNavUrl) continue
-
-      if (action.type === 'navigate') lastNavUrl = action.url || ''
-      else lastNavUrl = ''
-
-      result.push(action)
-    }
-    return result
+    return optimizeActionsUtil(actions)
   }
 
   private async executeAction(action: RecordedAction, actionIndex = -1): Promise<void> {

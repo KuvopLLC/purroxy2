@@ -4,6 +4,11 @@ export interface BrowserEngineOptions {
   localStorage?: Record<string, string>
   timeout?: number
   viewport?: { width: number; height: number }
+  // Hostname of the site the capability will navigate to. Used to filter
+  // cross-domain cookies out of the saved jar before injection, which cuts
+  // header bloat and drops stale bot-mitigation cookies that would otherwise
+  // cause Akamai/Cloudflare to reject the replayed session.
+  targetDomain?: string
 }
 
 export interface ExtractedData {

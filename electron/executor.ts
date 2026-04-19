@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { getCapability, updateCapability } from './capabilities'
 import { getSite, getSession } from './sites'
-import { PlaywrightEngine } from '../core/browser/playwright-engine'
+import { createBrowserEngine } from '../core/browser/browser-engine'
 import type { ExecutionResult } from '../core/browser/types'
 import { isLicenseValid } from './account'
 import { healSelector } from './healer'
@@ -36,7 +36,7 @@ export function setupExecutor(mainWindow: BrowserWindow) {
       console.log(`[Executor] Cookies: ${session.cookies?.length || 0}, LocalStorage keys: ${Object.keys(session.localStorage || {}).length}`)
     }
 
-    const engine = new PlaywrightEngine()
+    const engine = createBrowserEngine('playwright')
 
     // Wire AI-based self-healing for broken selectors
     const apiKey = store.get('aiApiKey')
@@ -58,7 +58,8 @@ export function setupExecutor(mainWindow: BrowserWindow) {
         headless: !options.visible,
         cookies,
         localStorage,
-        viewport: (cap as any).viewport || undefined
+        viewport: (cap as any).viewport || undefined,
+        targetDomain: site.hostname
       })
 
       // Ensure actions start with a navigate to the site URL
