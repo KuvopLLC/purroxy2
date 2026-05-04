@@ -155,7 +155,16 @@ pub async fn replay(opts: ReplayOptions) -> Result<RunRecord> {
 
     // 2. launch browser, navigate to start.
     let chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-    let mut cfg = BrowserConfig::builder().chrome_executable(chrome_path);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let tid = format!("{:?}", std::thread::current().id());
+    let unique = format!("{:x}-{}-{}", nanos, std::process::id(), tid.replace(['(', ')', ' ', ','], "_"));
+    let user_data_dir = std::env::temp_dir().join(format!("purroxy-replay-{unique}"));
+    let mut cfg = BrowserConfig::builder()
+        .chrome_executable(chrome_path)
+        .user_data_dir(&user_data_dir);
     if opts.headless {
         // builder default is headless
     } else {
@@ -170,6 +179,7 @@ pub async fn replay(opts: ReplayOptions) -> Result<RunRecord> {
         while handler.next().await.is_some() {}
     });
     let page = browser.new_page(&manifest.target_site).await?;
+    page.wait_for_navigation().await?;
 
     let started_at_ms = epoch_ms();
     let mut step_outcomes: Vec<StepOutcome> = Vec::new();
@@ -204,20 +214,38 @@ pub async fn replay(opts: ReplayOptions) -> Result<RunRecord> {
             break;
         }
 
-        // 4. execute action.
-        // Phase 3 spike: only Navigate is fully implemented. Click
-        // and Input are recorded but their CDP execution lands in
-        // followups (need element-handle resolution against the live
-        // page from intent fields).
+        // 4. execute action. Click and Input use the recorded
+        // intent (target role, target name pattern) to find the
+        // element on the live page via JS in the page context.
+        // Repair (when the intent's first match isn't the right
+        // element) is a Phase 3 followup; the WIT contract supports
+        // it via score-repair-candidates, but this engine doesn't
+        // wire it yet.
         let action_executed = match &step.action {
-            ActionKind::Navigate { url } => {
-                page.goto(url).await.ok().is_some()
+            ActionKind::Navigate { url } => page.goto(url).await.ok().is_some(),
+            ActionKind::Click { .. } => execute_click(&page, &step.intent).await?,
+            ActionKind::Input { value, .. } => {
+                execute_input(&page, &step.intent, value).await?
             }
-            _ => false,
         };
 
-        // wait for the page to settle.
-        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        // wait for the page to settle. If the action triggered a
+        // navigation, wait_for_navigation resolves; otherwise
+        // timeout and proceed. After that, retry a trivial evaluate
+        // until the new execution context is available so the
+        // subsequent snapshot capture doesn't trip "Cannot find
+        // context with specified id".
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_millis(2500),
+            page.wait_for_navigation(),
+        )
+        .await;
+        for _ in 0..20 {
+            if page.evaluate("1").await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
 
         // 5. postflight.
         let live_after = recorder::snapshot::capture_snapshot(&page).await?;
@@ -341,6 +369,87 @@ fn param_value_to_json(v: &purroxy::capability::types::ParamValue) -> serde_json
         BoolVal(b) => serde_json::Value::Bool(*b),
         None => serde_json::Value::Null,
     }
+}
+
+async fn execute_click(
+    page: &chromiumoxide::Page,
+    intent: &recorder::types::StepIntent,
+) -> Result<bool> {
+    let target_role = intent.target_role.as_str();
+    let name = intent.target_name_pattern.as_deref().unwrap_or("");
+    let script = format!(
+        r#"(() => {{
+            const role = {role_json};
+            const name = {name_json};
+            const matches = (el) => {{
+                const elRole = el.getAttribute('role') || el.tagName.toLowerCase();
+                if (elRole !== role) return false;
+                if (!name) return true;
+                const aria = el.getAttribute('aria-label') || '';
+                const text = (el.textContent || '').trim();
+                const placeholder = el.getAttribute('placeholder') || '';
+                return aria.includes(name) || text.includes(name) || placeholder.includes(name);
+            }};
+            const all = Array.from(document.querySelectorAll('*'));
+            const target = all.find(matches);
+            if (!target) return JSON.stringify({{ ok: false, reason: 'no-match' }});
+            target.click();
+            return JSON.stringify({{ ok: true }});
+        }})()"#,
+        role_json = serde_json::to_string(target_role).unwrap(),
+        name_json = serde_json::to_string(name).unwrap(),
+    );
+    let result = page.evaluate(script.as_str()).await?;
+    let s: String = result.into_value().unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(&s).unwrap_or(serde_json::Value::Null);
+    let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
+    if !ok {
+        eprintln!("[replay] click failed: {s}");
+    }
+    Ok(ok)
+}
+
+async fn execute_input(
+    page: &chromiumoxide::Page,
+    intent: &recorder::types::StepIntent,
+    value: &str,
+) -> Result<bool> {
+    let target_role = intent.target_role.as_str();
+    let name = intent.target_name_pattern.as_deref().unwrap_or("");
+    let script = format!(
+        r#"(() => {{
+            const role = {role_json};
+            const name = {name_json};
+            const value = {value_json};
+            const matches = (el) => {{
+                const elRole = el.getAttribute('role') || el.tagName.toLowerCase();
+                if (elRole !== role && elRole !== 'input' && elRole !== 'textbox') return false;
+                if (!name) return true;
+                const aria = el.getAttribute('aria-label') || '';
+                const placeholder = el.getAttribute('placeholder') || '';
+                const labelText = (el.labels && el.labels[0] && el.labels[0].innerText) || '';
+                return aria.includes(name) || placeholder.includes(name) || labelText.includes(name);
+            }};
+            const all = Array.from(document.querySelectorAll('input, textarea, [contenteditable], [role=textbox]'));
+            const target = all.find(matches);
+            if (!target) return false;
+            target.focus();
+            if ('value' in target) {{
+                const setter = Object.getOwnPropertyDescriptor(target.constructor.prototype, 'value').set;
+                setter.call(target, value);
+            }} else {{
+                target.textContent = value;
+            }}
+            target.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            target.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            return true;
+        }})()"#,
+        role_json = serde_json::to_string(target_role).unwrap(),
+        name_json = serde_json::to_string(name).unwrap(),
+        value_json = serde_json::to_string(value).unwrap(),
+    );
+    let result = page.evaluate(script.as_str()).await?;
+    Ok(result.into_value::<bool>().unwrap_or(false))
 }
 
 fn epoch_ms() -> u64 {
