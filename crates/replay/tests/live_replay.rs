@@ -56,10 +56,29 @@ async fn click_link_round_trips() {
     assert_eq!(record.steps.len(), 1);
     let step = &record.steps[0];
     assert!(step.action_executed, "Click action must execute (matched 'Learn more' on example.com)");
-    // After clicking the Learn more link, the page is on iana.org
-    // (title becomes 'Example Domains' plural) so extract returns
-    // the new page title.
+    assert!(!step.repaired, "direct click matched, no repair needed");
     let out = record.final_output.expect("extract output present");
     assert!(out.contains("Example Domains") || out.contains("Example Domain"),
         "post-click extract should reflect either the original or the new page title; got: {out}");
+}
+
+// Repair scenario: the fixture's intent uses a stale name ("More
+// information" — example.com used to render that text, now renders
+// "Learn more"). Direct click fails on the name match. Repair flow
+// kicks in: filter candidates by role only, score via the WASM
+// component's score-repair-candidates, accept the top score above
+// threshold and click. The reference scorer returns linearly
+// decreasing scores; first anchor wins; navigation succeeds.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn repair_click_when_intent_name_is_stale() {
+    let record = run_fixture("repair-click").await;
+    assert!(matches!(record.outcome, RunOutcome::Success), "{:?}", record.outcome);
+    assert_eq!(record.steps.len(), 1);
+    let step = &record.steps[0];
+    assert!(step.repaired, "repair flow must engage when direct click fails");
+    assert!(step.action_executed, "repair must end in a successful click");
+    let out = record.final_output.expect("extract output present");
+    assert!(out.contains("Example Domains") || out.contains("Example Domain"),
+        "post-repair-click extract should reflect post-navigation title; got: {out}");
 }

@@ -214,16 +214,30 @@ pub async fn replay(opts: ReplayOptions) -> Result<RunRecord> {
             break;
         }
 
-        // 4. execute action. Click and Input use the recorded
-        // intent (target role, target name pattern) to find the
-        // element on the live page via JS in the page context.
-        // Repair (when the intent's first match isn't the right
-        // element) is a Phase 3 followup; the WIT contract supports
-        // it via score-repair-candidates, but this engine doesn't
-        // wire it yet.
+        // 4. execute action. Click and Input first try the exact
+        // intent match against the live page. If that fails, enter
+        // repair: enumerate candidates matching role only, ask the
+        // component to score them, accept the top score if it
+        // exceeds the threshold (PRD §9.4).
+        let mut repaired = false;
         let action_executed = match &step.action {
             ActionKind::Navigate { url } => page.goto(url).await.ok().is_some(),
-            ActionKind::Click { .. } => execute_click(&page, &step.intent).await?,
+            ActionKind::Click { .. } => {
+                if execute_click(&page, &step.intent).await? {
+                    true
+                } else {
+                    let r = try_repair_click(
+                        &page,
+                        &mut store,
+                        &bindings,
+                        &step.id,
+                        &step.intent,
+                    )
+                    .await?;
+                    repaired = r;
+                    r
+                }
+            }
             ActionKind::Input { value, .. } => {
                 execute_input(&page, &step.intent, value).await?
             }
@@ -269,7 +283,7 @@ pub async fn replay(opts: ReplayOptions) -> Result<RunRecord> {
             step_id: step.id.clone(),
             preflight: pre,
             postflight: post,
-            repaired: false,
+            repaired,
             action_executed,
         });
         if post_failed {
@@ -407,6 +421,127 @@ async fn execute_click(
         eprintln!("[replay] click failed: {s}");
     }
     Ok(ok)
+}
+
+// Repair path for click. Host filters candidates by role only,
+// asks the component to score them via score-repair-candidates,
+// accepts the top scored candidate iff:
+//   (a) score exceeds REPAIR_SCORE_THRESHOLD,
+//   (b) the candidate still passes a host-side structural intent
+//       re-check (PRD §9.4),
+//   (c) the candidate ranks within REPAIR_TOP_N of the filtered
+//       set.
+// Component cannot promote a candidate the host filter excluded;
+// a malicious or buggy scorer can re-order, not substitute.
+const REPAIR_SCORE_THRESHOLD: f64 = 0.5;
+const REPAIR_TOP_N: usize = 5;
+
+async fn try_repair_click(
+    page: &chromiumoxide::Page,
+    store: &mut Store<HostState>,
+    bindings: &Capability,
+    step_id: &str,
+    intent: &recorder::types::StepIntent,
+) -> Result<bool> {
+    // 1. Pre-filter candidates by role on the live page. Each
+    //    candidate gets a stable index that is also its
+    //    ElementHandle.id, so the component's scored candidate
+    //    points back at a clickable element.
+    let role = &intent.target_role;
+    let script = format!(
+        r#"(() => {{
+            const role = {role_json};
+            const all = Array.from(document.querySelectorAll('*'));
+            const cands = [];
+            for (let i = 0; i < all.length; i++) {{
+                const el = all[i];
+                const r = el.getAttribute('role') || el.tagName.toLowerCase();
+                if (r === role) {{
+                    cands.push({{
+                        index: i,
+                        text: (el.textContent || '').trim().slice(0, 200),
+                        aria: el.getAttribute('aria-label') || '',
+                    }});
+                    if (cands.length >= {top_n}) break;
+                }}
+            }}
+            return JSON.stringify(cands);
+        }})()"#,
+        role_json = serde_json::to_string(role).unwrap(),
+        top_n = REPAIR_TOP_N,
+    );
+    let raw = page.evaluate(script.as_str()).await?;
+    let s: String = raw.into_value().unwrap_or_default();
+    let cands: Vec<serde_json::Value> = serde_json::from_str(&s).unwrap_or_default();
+    if cands.is_empty() {
+        return Ok(false);
+    }
+
+    let handles: Vec<ElementHandle> = cands
+        .iter()
+        .enumerate()
+        .map(|(i, _)| ElementHandle { id: i as u64 })
+        .collect();
+    let live = recorder::snapshot::capture_snapshot(page).await?;
+    let snap = store
+        .data_mut()
+        .table
+        .push(SnapshotState::from_recorder(&live))?;
+
+    let wit_intent = purroxy::capability::types::StepIntent {
+        target_role: intent.target_role.clone(),
+        target_name_pattern: intent.target_name_pattern.clone(),
+        target_text_content: intent.target_text_content.clone(),
+        structural_anchor_roles: intent.structural_anchor_roles.clone(),
+        surrounding_context: intent.surrounding_context.clone(),
+    };
+
+    let scored = bindings.call_score_repair_candidates(
+        store,
+        step_id,
+        &wit_intent,
+        &handles,
+        snap,
+    )?;
+
+    // 2. Pick the top score.
+    let mut best: Option<&purroxy::capability::types::ScoredCandidate> = None;
+    for c in &scored {
+        if best.map(|b| c.score > b.score).unwrap_or(true) {
+            best = Some(c);
+        }
+    }
+    let Some(top) = best else {
+        return Ok(false);
+    };
+    if top.score < REPAIR_SCORE_THRESHOLD {
+        return Ok(false);
+    }
+
+    // 3. Resolve the chosen candidate's index to a real DOM index
+    //    and click it. The component's candidate id is the position
+    //    in the handles list; that maps back into our cands array.
+    let pos = top.handle.id as usize;
+    let chosen = cands.get(pos).cloned().unwrap_or(serde_json::Value::Null);
+    let dom_index = chosen.get("index").and_then(|v| v.as_i64());
+    let Some(dom_index) = dom_index else {
+        return Ok(false);
+    };
+
+    let click_script = format!(
+        r#"(() => {{
+            const all = Array.from(document.querySelectorAll('*'));
+            const el = all[{idx}];
+            if (!el) return JSON.stringify({{ ok: false }});
+            el.click();
+            return JSON.stringify({{ ok: true }});
+        }})()"#,
+        idx = dom_index,
+    );
+    let raw = page.evaluate(click_script.as_str()).await?;
+    let s: String = raw.into_value().unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(&s).unwrap_or(serde_json::Value::Null);
+    Ok(v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false))
 }
 
 async fn execute_input(
