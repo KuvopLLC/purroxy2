@@ -1,0 +1,84 @@
+// Purroxy host imports, version 1.
+//
+// The four interfaces a capability component may import. Host
+// implementations are pure functions over the data the host already
+// gave the component (no side effects on the live browser, no I/O
+// beyond what's in this contract). The component cannot reach the
+// network, the filesystem, the vault, the session, or the live page
+// through these helpers.
+
+package purroxy:host@1.0.0;
+
+// DOM-shape queries against an accessibility-tree-derived
+// page-snapshot. Operates on the snapshot resource the host handed
+// the component for the current call; out-of-band handles are
+// rejected.
+
+interface dom-shape {
+    use purroxy:types/types@1.0.0.{page-snapshot, element-handle};
+
+    find-by-role: func(snap: borrow<page-snapshot>, role: string) -> list<element-handle>;
+    find-by-name-pattern: func(snap: borrow<page-snapshot>, pattern: string) -> list<element-handle>;
+    find-by-text-contains: func(snap: borrow<page-snapshot>, needle: string) -> list<element-handle>;
+
+    role-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+    name-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+    text-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+    value-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+
+    attribute-of: func(snap: borrow<page-snapshot>, h: element-handle, key: string) -> option<string>;
+    attributes-of: func(snap: borrow<page-snapshot>, h: element-handle) -> list<tuple<string, string>>;
+
+    parent-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<element-handle>;
+    children-of: func(snap: borrow<page-snapshot>, h: element-handle) -> list<element-handle>;
+    ancestors-of: func(snap: borrow<page-snapshot>, h: element-handle) -> list<element-handle>;
+}
+
+// Regex matching. Imported rather than in-component because:
+//   1. host-side regex avoids 100s of KB of regex code per component;
+//   2. one engine, one set of edge cases, deterministic across
+//      contributor language choices;
+//   3. host can enforce timeout against catastrophic patterns.
+
+interface regex {
+    variant regex-error {
+        invalid-pattern(string),
+        timeout,
+    }
+
+    record match-info {
+        start: u32,
+        end: u32,
+        captures: list<tuple<u32, u32>>,
+    }
+
+    is-match: func(pattern: string, input: string) -> result<bool, regex-error>;
+    find-first: func(pattern: string, input: string) -> result<option<match-info>, regex-error>;
+    find-all: func(pattern: string, input: string) -> result<list<match-info>, regex-error>;
+}
+
+// Structured logging. Component reasoning lands in the run record.
+// The host caps total log volume per run (target: 64KB) and scrubs
+// vault values from log entries identically to the output scrubber
+// (PRD §5).
+
+interface logging {
+    enum level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+    }
+
+    log: func(lvl: level, message: string, kv: list<tuple<string, string>>);
+}
+
+// Monotonic clock. The only clock available to components: no wall
+// clock, no system time, no nondeterminism the host doesn't supply.
+// Returns milliseconds since component instantiation; values are
+// monotonic non-decreasing within a single run.
+
+interface clock {
+    monotonic-now-ms: func() -> u64;
+}

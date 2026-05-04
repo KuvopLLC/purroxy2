@@ -1,0 +1,77 @@
+// Purroxy capability contract, version 1.
+//
+// Companion to PRD v2.0 §5. Every capability bundle's logic.wasm
+// implements the `capability` world. The host loads the component into
+// a fresh wasmtime Store per run, with explicit resource budgets and
+// no implicit capabilities (no FS, no network, no env, no clocks
+// beyond a monotonic timer).
+//
+// Stability: this contract is treated as a public API. Additive
+// changes preferred; deprecation window is six months minimum;
+// breaking changes get a new package version (`purroxy:capability@2.0.0`).
+// See PRD §10 (WIT version migration).
+
+package purroxy:capability@1.0.0;
+
+// The world every capability component implements.
+//
+// All exports are synchronous (PRD §5: "sync only at v1"). The host
+// serializes calls within a single run and calls each export at most
+// once per logical event (preflight before each step, postflight
+// after each step, etc.).
+//
+// The host cross-checks `metadata` against the bundle manifest at
+// load; mismatch is a hard load failure.
+//
+// `score-repair-candidates`: the component re-orders within the
+// pre-filtered set; it cannot promote a candidate the host filter
+// excluded. Host accepts the top score iff it exceeds threshold,
+// still passes structural intent re-check, and ranks within top N
+// (PRD §9.4).
+//
+// `postflight`: host runs an independent structural postflight
+// check; both must pass (PRD §9.4 bounds damage from a malicious or
+// buggy postflight).
+//
+// `redact`: host applies a second pass (sensitive fields per
+// metadata's output-schema must be absent or null after redact,
+// otherwise the host strips them) plus a third pass (host-side
+// vault-value scrubber from §9.2).
+
+world capability {
+    import purroxy:host/dom-shape@1.0.0;
+    import purroxy:host/regex@1.0.0;
+    import purroxy:host/logging@1.0.0;
+    import purroxy:host/clock@1.0.0;
+
+    use purroxy:types/types@1.0.0.{
+        capability-metadata,
+        param-set,
+        validation-error,
+        page-snapshot,
+        preflight-error,
+        postflight-error,
+        step-intent,
+        element-handle,
+        scored-candidate,
+        output,
+        extract-error,
+    };
+
+    export metadata: func() -> capability-metadata;
+    export validate-params: func(p: param-set) -> result<param-set, validation-error>;
+    export preflight: func(step-id: string, page: borrow<page-snapshot>) -> result<_, preflight-error>;
+    export postflight: func(
+        step-id: string,
+        before: borrow<page-snapshot>,
+        after: borrow<page-snapshot>,
+    ) -> result<_, postflight-error>;
+    export score-repair-candidates: func(
+        step-id: string,
+        intent: step-intent,
+        candidates: list<element-handle>,
+        page: borrow<page-snapshot>,
+    ) -> list<scored-candidate>;
+    export extract: func(page: borrow<page-snapshot>) -> result<output, extract-error>;
+    export redact: func(o: output) -> output;
+}

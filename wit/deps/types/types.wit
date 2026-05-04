@@ -1,0 +1,153 @@
+// Purroxy shared types, version 1.
+//
+// Types referenced from both `purroxy:host` (host imports a
+// component uses) and `purroxy:capability` (the world a component
+// implements). Lives in its own package to avoid a cycle between
+// host and capability.
+
+package purroxy:types@1.0.0;
+
+interface types {
+    // ---- Resource budget (declared by capability, enforced by host).
+
+    record resource-budget {
+        max-memory-bytes: u64,
+        max-fuel: u64,
+        max-wall-clock-ms: u64,
+    }
+
+    // ---- Parameter and output schemas (in metadata).
+
+    enum value-kind {
+        string-kind,
+        s64-kind,
+        f64-kind,
+        bool-kind,
+    }
+
+    record param-schema-field {
+        name: string,
+        kind: value-kind,
+        required: bool,
+        description: string,
+    }
+
+    record output-schema-field {
+        name: string,
+        kind: value-kind,
+        sensitive: bool,
+        description: string,
+    }
+
+    // ---- Capability self-description.
+
+    record capability-metadata {
+        name: string,
+        description: string,
+        target-site-pattern: string,
+        parameter-schema: list<param-schema-field>,
+        output-schema: list<output-schema-field>,
+        vault-references: list<string>,
+        budget: resource-budget,
+        target-wit-version: string,
+    }
+
+    // ---- Param values (runtime input).
+
+    variant param-value {
+        string-val(string),
+        s64-val(s64),
+        f64-val(f64),
+        bool-val(bool),
+        none,
+    }
+
+    record param-entry {
+        name: string,
+        value: param-value,
+    }
+
+    record param-set {
+        entries: list<param-entry>,
+    }
+
+    // ---- Output values (extraction result, before redaction).
+
+    record output-field {
+        name: string,
+        value: param-value,
+        sensitive: bool,
+    }
+
+    record output {
+        fields: list<output-field>,
+    }
+
+    // ---- Element handle. Opaque token; component must not interpret.
+
+    record element-handle {
+        id: u64,
+    }
+
+    // ---- Step intent (recording-time data).
+
+    record step-intent {
+        target-role: string,
+        target-name-pattern: option<string>,
+        target-text-content: option<string>,
+        structural-anchor-roles: list<string>,
+        surrounding-context: option<string>,
+    }
+
+    // ---- Scored candidate (returned by repair scoring).
+
+    record scored-candidate {
+        handle: element-handle,
+        score: f64,
+        reason: string,
+    }
+
+    // ---- Page snapshot. Resource owned by host.
+
+    resource page-snapshot {
+        url: func() -> string;
+        title: func() -> string;
+        viewport-width: func() -> u32;
+        viewport-height: func() -> u32;
+        root-handle: func() -> element-handle;
+    }
+
+    // ---- Structured errors.
+
+    record err-context {
+        step-id: option<string>,
+        candidate-index: option<u32>,
+        observed: option<string>,
+        expected: option<string>,
+    }
+
+    variant validation-error {
+        missing-required(string),
+        type-mismatch(tuple<string, value-kind>),
+        out-of-range(string),
+        custom(tuple<string, string, err-context>),
+    }
+
+    variant preflight-error {
+        expected-element-not-present(string),
+        unexpected-page-state(string),
+        custom(tuple<string, string, err-context>),
+    }
+
+    variant postflight-error {
+        expected-effect-not-observed(string),
+        page-state-regressed(string),
+        custom(tuple<string, string, err-context>),
+    }
+
+    variant extract-error {
+        target-not-present(string),
+        unexpected-format(string),
+        custom(tuple<string, string, err-context>),
+    }
+}
