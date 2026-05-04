@@ -5,6 +5,7 @@ members = [
     "crates/recorder",
     "crates/reference-capability",
     "crates/replay",
+    "crates/security",
 ]
 resolver = "2"
 
