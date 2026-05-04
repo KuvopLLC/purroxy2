@@ -3,6 +3,7 @@ members = [
     "crates/host",
     "crates/recorder",
     "crates/reference-capability",
+    "crates/replay",
 ]
 resolver = "2"
 

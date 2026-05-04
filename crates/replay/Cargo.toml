@@ -1,0 +1,22 @@
+[package]
+name = "replay"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Phase 3 deliverable: replay a recording against the live browser
+# using a WASM capability component to gate preflight, postflight,
+# and repair-candidate scoring per the WIT contract from Phase 1.
+# Produces a run record.
+
+[dependencies]
+anyhow.workspace = true
+chromiumoxide.workspace = true
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+recorder = { path = "../recorder" }
