@@ -1,0 +1,24 @@
+[package]
+name = "reference-capability"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# A reference capability component that exercises every export of the
+# purroxy:capability/v1 world. Used as the test fixture for contract
+# tests against the host, and as a worked example for contributors.
+# Implementation is intentionally minimal; the point is to validate
+# the contract end-to-end, not to do anything useful in a browser.
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt.workspace = true
+
+[package.metadata.component]
+package = "purroxy:reference-capability"
+
+[package.metadata.component.target]
+world = "capability"

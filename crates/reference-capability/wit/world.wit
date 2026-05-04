@@ -1,0 +1,223 @@
+// Single-file WIT for the reference capability crate.
+// Mirrors the canonical multi-package layout in repo /wit/ but
+// flattened into one package because cargo-component v0.21 has not
+// proven cooperative with multi-package local-deps. The semantic
+// content is identical.
+
+package purroxy:capability@1.0.0;
+
+interface types {
+    record resource-budget {
+        max-memory-bytes: u64,
+        max-fuel: u64,
+        max-wall-clock-ms: u64,
+    }
+
+    enum value-kind {
+        string-kind,
+        s64-kind,
+        f64-kind,
+        bool-kind,
+    }
+
+    record param-schema-field {
+        name: string,
+        kind: value-kind,
+        required: bool,
+        description: string,
+    }
+
+    record output-schema-field {
+        name: string,
+        kind: value-kind,
+        sensitive: bool,
+        description: string,
+    }
+
+    record capability-metadata {
+        name: string,
+        description: string,
+        target-site-pattern: string,
+        parameter-schema: list<param-schema-field>,
+        output-schema: list<output-schema-field>,
+        vault-references: list<string>,
+        budget: resource-budget,
+        target-wit-version: string,
+    }
+
+    variant param-value {
+        string-val(string),
+        s64-val(s64),
+        f64-val(f64),
+        bool-val(bool),
+        none,
+    }
+
+    record param-entry {
+        name: string,
+        value: param-value,
+    }
+
+    record param-set {
+        entries: list<param-entry>,
+    }
+
+    record output-field {
+        name: string,
+        value: param-value,
+        sensitive: bool,
+    }
+
+    record output {
+        fields: list<output-field>,
+    }
+
+    record element-handle {
+        id: u64,
+    }
+
+    record step-intent {
+        target-role: string,
+        target-name-pattern: option<string>,
+        target-text-content: option<string>,
+        structural-anchor-roles: list<string>,
+        surrounding-context: option<string>,
+    }
+
+    record scored-candidate {
+        handle: element-handle,
+        score: f64,
+        reason: string,
+    }
+
+    resource page-snapshot {
+        url: func() -> string;
+        title: func() -> string;
+        viewport-width: func() -> u32;
+        viewport-height: func() -> u32;
+        root-handle: func() -> element-handle;
+    }
+
+    record err-context {
+        step-id: option<string>,
+        candidate-index: option<u32>,
+        observed: option<string>,
+        expected: option<string>,
+    }
+
+    variant validation-error {
+        missing-required(string),
+        type-mismatch(tuple<string, value-kind>),
+        out-of-range(string),
+        custom(tuple<string, string, err-context>),
+    }
+
+    variant preflight-error {
+        expected-element-not-present(string),
+        unexpected-page-state(string),
+        custom(tuple<string, string, err-context>),
+    }
+
+    variant postflight-error {
+        expected-effect-not-observed(string),
+        page-state-regressed(string),
+        custom(tuple<string, string, err-context>),
+    }
+
+    variant extract-error {
+        target-not-present(string),
+        unexpected-format(string),
+        custom(tuple<string, string, err-context>),
+    }
+}
+
+interface dom-shape {
+    use types.{page-snapshot, element-handle};
+
+    find-by-role: func(snap: borrow<page-snapshot>, role: string) -> list<element-handle>;
+    find-by-name-pattern: func(snap: borrow<page-snapshot>, pattern: string) -> list<element-handle>;
+    find-by-text-contains: func(snap: borrow<page-snapshot>, needle: string) -> list<element-handle>;
+
+    role-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+    name-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+    text-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+    value-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<string>;
+
+    attribute-of: func(snap: borrow<page-snapshot>, h: element-handle, key: string) -> option<string>;
+    attributes-of: func(snap: borrow<page-snapshot>, h: element-handle) -> list<tuple<string, string>>;
+
+    parent-of: func(snap: borrow<page-snapshot>, h: element-handle) -> option<element-handle>;
+    children-of: func(snap: borrow<page-snapshot>, h: element-handle) -> list<element-handle>;
+    ancestors-of: func(snap: borrow<page-snapshot>, h: element-handle) -> list<element-handle>;
+}
+
+interface regex {
+    variant regex-error {
+        invalid-pattern(string),
+        timeout,
+    }
+
+    record match-info {
+        start: u32,
+        end: u32,
+        captures: list<tuple<u32, u32>>,
+    }
+
+    is-match: func(pattern: string, input: string) -> result<bool, regex-error>;
+    find-first: func(pattern: string, input: string) -> result<option<match-info>, regex-error>;
+    find-all: func(pattern: string, input: string) -> result<list<match-info>, regex-error>;
+}
+
+interface logging {
+    enum level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+    }
+
+    log: func(lvl: level, message: string, kv: list<tuple<string, string>>);
+}
+
+interface clock {
+    monotonic-now-ms: func() -> u64;
+}
+
+world capability {
+    import dom-shape;
+    import regex;
+    import logging;
+    import clock;
+
+    use types.{
+        capability-metadata,
+        param-set,
+        validation-error,
+        page-snapshot,
+        preflight-error,
+        postflight-error,
+        step-intent,
+        element-handle,
+        scored-candidate,
+        output,
+        extract-error,
+    };
+
+    export metadata: func() -> capability-metadata;
+    export validate-params: func(p: param-set) -> result<param-set, validation-error>;
+    export preflight: func(step-id: string, page: borrow<page-snapshot>) -> result<_, preflight-error>;
+    export postflight: func(
+        step-id: string,
+        before: borrow<page-snapshot>,
+        after: borrow<page-snapshot>,
+    ) -> result<_, postflight-error>;
+    export score-repair-candidates: func(
+        step-id: string,
+        intent: step-intent,
+        candidates: list<element-handle>,
+        page: borrow<page-snapshot>,
+    ) -> list<scored-candidate>;
+    export extract: func(page: borrow<page-snapshot>) -> result<output, extract-error>;
+    export redact: func(o: output) -> output;
+}

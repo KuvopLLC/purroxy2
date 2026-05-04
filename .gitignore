@@ -7,3 +7,9 @@ release/
 .claude/
 tsconfig.node.tsbuildinfo
 Dockerfile
+
+# Rust
+/target/
+crates/**/target/
+spike/
+**/src/bindings.rs
